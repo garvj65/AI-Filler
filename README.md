@@ -59,8 +59,8 @@ node bridge/server.js
 ### 1. Clone the original project
 
 ```bash
-git clone https://github.com/deepak0x/ai-form-filler.git
-cd ai-form-filler
+git clone https://github.com/garvj65/AI-Filler.git
+cd AI-Filler
 cp profile.example.json profile.json
 ```
 
