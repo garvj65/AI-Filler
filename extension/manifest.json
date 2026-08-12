@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Form Filler (Local Claude)",
-  "version": "1.1",
-  "description": "Scans any web form (Google Forms or plain HTML) on click and fills it from your profile using your local Claude Code subscription. No API key.",
+  "name": "AI Form Filler (Local Ollama)",
+  "version": "1.2",
+  "description": "Scans web forms on click and fills them from your local profile using Ollama. No API key or AI subscription required.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "http://127.0.0.1:8731/*"

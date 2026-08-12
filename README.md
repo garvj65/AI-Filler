@@ -1,169 +1,194 @@
-<div align="center">
+# AI Form Filler — Local Ollama Edition
 
-# AI Form Filler
+Fill Google Forms and ordinary HTML forms from your own `profile.json`, using an AI model that runs locally through Ollama.
 
-Fill any web form, Google Forms or plain HTML, from your own profile using your local Claude Code subscription. No API key, no cost.
+**No Claude Code. No API key. No AI subscription. No per-request bill.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
-[![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white)](extension/manifest.json)
-[![Powered by Claude Code](https://img.shields.io/badge/powered%20by-Claude%20Code-8A2BE2)](https://claude.com/claude-code)
-![GitHub stars](https://img.shields.io/github/stars/deepak0x/ai-form-filler?style=social)
+The browser extension scans visible form fields only when you click Start. The local Node bridge sends the scanned questions plus your local profile to Ollama on `127.0.0.1`, gets structured JSON answers back, and fills the form.
 
-</div>
+## Architecture
 
----
-
-You open a form, click Start, and the extension reads whatever fields are on the page (no pasting
-questions), asks your local Claude to match them to your saved data, and fills them in. Turn on
-auto-submit and it sends the form too.
-
-The brain is your Claude Code subscription running locally through `claude -p`, so there's no API
-key and nothing to pay per use.
-
-## Why I built this
-
-I kept retyping the same details into Google Forms, job applications, and event signups. Most
-autofillers only handle exact matches like name and email, or they ship your data off to a cloud
-API. This one runs on your machine and actually reads the question.
-
-- **Local and private.** Your profile never leaves your machine, and nothing scans a page until you click Start.
-- **No API key, no bill.** It uses the Claude Code subscription you already have.
-- **Understands the question.** It matches messy, real-world fields to your data, not just `name`/`email`.
-- **Works on Google Forms and ordinary HTML forms** on any site.
-
-```
-Any form tab (you clicked Start)
-  └─ content.js  scans fields → fills answers → optional auto-submit
-       └─ background.js → POST http://127.0.0.1:8731/fill
-            └─ server.js  runs `claude -p` (your local subscription) → returns answers
+```text
+Form tab
+  -> extension/content.js scans fields and fills answers
+  -> extension/background.js POSTs to http://127.0.0.1:8731/fill
+  -> bridge/server.js calls local Ollama at http://127.0.0.1:11434/api/chat
+  -> Qwen3 returns JSON answers
 ```
 
-## Features
+Your `profile.json` remains on your machine. In the default configuration, the model inference also happens on your machine.
 
-- **Works on any form.** Google Forms and ordinary HTML forms. For plain forms it reads native
-  `<input>`/`<textarea>`/`<select>`/radios/checkboxes and infers each question from its label,
-  `aria-label`, placeholder, fieldset legend, or nearby text.
-- **Click to Start.** Nothing runs until you open the popup and hit Start, so pages never get
-  scanned behind your back.
-- **Dynamic scanning.** Reads whatever fields exist (text, paragraph, radio, checkbox, dropdown).
-  No pre-defining questions.
-- **AI matching on local Claude.** A local bridge runs `claude -p` on your Claude Code
-  subscription, so there's no API key or cost.
-- **Progress panel.** A small card shows scanning, asking AI, and filling, with a live bar.
-- **Verify and ask.** After filling, each field is checked to confirm the value actually stuck.
-  Anything the AI couldn't decide (or that silently failed) shows up with an editor
-  (text box, dropdown, checkboxes), pre-filled with its best guess. You fix it and it's written in.
-- **Learns your answers.** Anything you fill by hand is saved to your profile (`learned_answers`)
-  and reused automatically when the same or a related question shows up later.
-- **Built-in toggles.** Ticks "Record my email" and "Send me a copy of my responses" when present.
-- **Optional auto-submit.** Fill and submit hands-free once you trust it.
+## Default model
+
+The bridge defaults to:
+
+```text
+qwen3:4b-instruct
+```
+
+It is a good balance for short classification/matching tasks like form filling. You can replace it with any Ollama chat model using `OLLAMA_MODEL`.
+
+Examples:
+
+```bash
+# smaller / lighter
+OLLAMA_MODEL=qwen3:1.7b node bridge/server.js
+
+# default
+OLLAMA_MODEL=qwen3:4b-instruct node bridge/server.js
+
+# stronger if your machine has more RAM/VRAM
+OLLAMA_MODEL=qwen3:8b node bridge/server.js
+```
+
+PowerShell:
+
+```powershell
+$env:OLLAMA_MODEL="qwen3:8b"
+node bridge/server.js
+```
 
 ## Requirements
 
-- [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` works in your terminal)
-- [Node.js](https://nodejs.org) for the local bridge
-- A Chromium browser (Chrome, Edge, or Brave)
+- Node.js 18+
+- Ollama
+- Chrome, Edge, Brave, or another Chromium browser
 
-## One-time setup
+## Setup
 
-1. **Clone and create your data file**
-   ```bash
-   git clone https://github.com/deepak0x/ai-form-filler.git
-   cd ai-form-filler
-   cp profile.example.json profile.json   # then fill in your details
-   ```
-   `profile.json` is gitignored, so your personal data is never committed. The more you fill in, the
-   more forms it can answer. It never invents values that aren't in the file.
+### 1. Clone the original project
 
-2. **Make sure Claude is logged in.** Run `claude` once in a terminal if you're not sure.
-
-3. **Load the extension**
-   - Open `chrome://extensions`
-   - Turn on Developer mode (top right)
-   - Click Load unpacked and select the `extension/` folder
-   - Optionally pin it so the popup is one click away.
-
-## Each time you want to fill forms
-
-1. **Start the bridge** (skip this if you set up the systemd service below):
-   ```bash
-   cd bridge
-   node server.js
-   ```
-   You should see `Form-filler bridge running on http://127.0.0.1:8731`.
-
-2. **Open any form**, click the extension icon (it should say Bridge: connected), and hit
-   Start, scan & fill. Toggle "Auto-submit after filling" first if you want it hands-free.
-
-## Platform notes
-
-The extension is the same on every OS. Only the bridge differs, and only in how you keep it
-running. Manual start (`node server.js`) works everywhere.
-
-- **Linux** — works as-is. Optional always-on service below.
-- **macOS** — works as-is; run `node server.js`, or use a process manager like `pm2` to keep it alive.
-- **Windows** — works via `claude.cmd` (handled automatically). Run `node server.js` in a terminal,
-  or use `pm2` / Task Scheduler to keep it alive. WSL also works if you prefer a Linux setup.
-
-Whatever the OS, `claude` (or `claude.cmd` on Windows) must be installed and logged in.
-
-## Run the bridge automatically (Linux / systemd)
-
-So you never have to start `server.js` by hand:
 ```bash
-systemctl --user enable --now form-filler-bridge      # start now + on every login
-loginctl enable-linger $USER                          # keep it running across reboots
-systemctl --user status form-filler-bridge            # check it
-journalctl --user -u form-filler-bridge -f            # live logs
-```
-The unit lives at `~/.config/systemd/user/form-filler-bridge.service`. Because it spawns the
-`claude` CLI, your Claude Code login has to stay valid. If fills start failing, check the logs for an
-auth error and run `claude` once to log back in.
-
-On macOS or Windows, the simplest always-on option is `pm2`:
-```bash
-npm i -g pm2
-pm2 start server.js --name form-filler-bridge
-pm2 save
+git clone https://github.com/deepak0x/ai-form-filler.git
+cd ai-form-filler
+cp profile.example.json profile.json
 ```
 
-## Quick test (no browser)
+Fill `profile.json` with your own information.
 
-With the bridge running:
+### 2. Install Ollama
+
+Install Ollama for your operating system and make sure the local service is running.
+
+### 3. Pull the default model
+
 ```bash
-curl -s -X POST localhost:8731/fill -H 'Content-Type: application/json' \
-  -d '{"fields":[{"id":"q0","question":"Your full name","type":"text"},
-                 {"id":"q1","question":"Email","type":"text"},
-                 {"id":"q2","question":"Languages you know","type":"checkbox",
-                  "options":["Python","Rust","JavaScript","Go"]}]}'
+ollama pull qwen3:4b-instruct
 ```
-Expect something like:
-`{"answers":{"q0":"Jane Doe","q1":"jane.doe@example.com","q2":["Python","JavaScript"]}}`
 
-## Limits
+You can verify it independently with:
 
-- The bridge has to be running (run it as a systemd user service so it's always on, see above).
-- Multi-page forms: it fills the visible page, so go to the next page and click Start again.
-- File uploads (like a resume) can't be automated, since file pickers are walled off from
-  extensions. The panel reminds you to upload manually. CAPTCHA and "I'm not a robot" can't be
-  automated either.
-- Each fill calls Claude once, so it takes a few seconds depending on form size.
-- Custom JS widgets: forms built entirely from styled `<div>`s with no native inputs or ARIA roles
-  (some React combobox libraries) may not be detected. Standard inputs, ARIA-role widgets, and
-  Google Forms all work.
+```bash
+ollama run qwen3:4b-instruct
+```
 
-## Contributing
+### 4. Start the bridge
 
-PRs and issues are welcome. It's a small codebase and a decent first open-source project to jump into.
+```bash
+cd bridge
+node server.js
+```
 
-- Check the [open issues](https://github.com/deepak0x/ai-form-filler/issues) and look for `good first issue`.
-- Ideas: a cross-platform bridge (macOS/Windows launch scripts), better custom-widget detection, a
-  Chrome Web Store build, a profile editor UI, more field types.
-- Fork, branch, PR. Keep changes focused.
+Expected startup output:
 
-If it saved you some typing, a star helps other people find it.
+```text
+Form-filler bridge running on http://127.0.0.1:8731
+AI: Ollama model qwen3:4b-instruct at http://127.0.0.1:11434
+No API key or subscription required.
+```
+
+### 5. Load the extension
+
+1. Open `chrome://extensions`.
+2. Turn on Developer mode.
+3. Click **Load unpacked**.
+4. Select the `extension/` folder.
+5. Open a form, click the extension, and start the scan/fill flow.
+
+## Configuration
+
+The bridge uses environment variables instead of provider credentials:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
+| `OLLAMA_MODEL` | `qwen3:4b-instruct` | Local model to use |
+| `AI_TIMEOUT_MS` | `120000` | Model request timeout |
+| `PORT` | `8731` | Bridge port |
+| `BRIDGE_HOST` | `127.0.0.1` | Bridge bind address |
+
+## Quick test without the browser
+
+Start Ollama and the bridge, then run:
+
+```bash
+curl -s -X POST localhost:8731/fill \
+  -H 'Content-Type: application/json' \
+  -d '{"fields":[{"id":"q0","question":"Your full name","type":"text"},{"id":"q1","question":"Email","type":"text"}]}'
+```
+
+Expected shape:
+
+```json
+{
+  "answers": {
+    "q0": "Jane Doe",
+    "q1": "jane.doe@example.com"
+  },
+  "resumePath": null
+}
+```
+
+## What changed from the Claude Code version
+
+The browser extension behavior is unchanged. The bridge no longer spawns:
+
+```text
+claude -p <prompt>
+```
+
+Instead it calls the local Ollama chat API with JSON output enabled. The response is then validated against each form field before being returned to the extension. Radio/dropdown answers must match one of the page's actual options, and checkbox answers are filtered to valid options.
+
+## Troubleshooting
+
+### `Could not reach Ollama`
+
+Make sure Ollama is running. Its default local API is:
+
+```text
+http://127.0.0.1:11434
+```
+
+### `model not found`
+
+Pull the configured model:
+
+```bash
+ollama pull qwen3:4b-instruct
+```
+
+### Too slow
+
+Try a smaller model:
+
+```bash
+OLLAMA_MODEL=qwen3:1.7b node bridge/server.js
+```
+
+### Answers are weaker than expected
+
+Try:
+
+```bash
+OLLAMA_MODEL=qwen3:8b node bridge/server.js
+```
+
+and make your `profile.json` richer and more explicit.
+
+## Privacy note
+
+With the default `OLLAMA_HOST`, both your profile data and inference stay local. If you deliberately point `OLLAMA_HOST` at another computer or hosted Ollama-compatible endpoint, your form/profile content will be sent there instead.
 
 ## License
 
-[MIT](./LICENSE) © 2026 Deepak Bhagat
+The upstream repository is MIT licensed. Preserve the upstream license and attribution when redistributing a modified version.
