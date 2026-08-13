@@ -1,11 +1,11 @@
 {
   "name": "form-filler-bridge",
-  "version": "1.4.0",
-  "description": "Local form-filler bridge with deterministic profile matching and Ollama fallback.",
+  "version": "1.5.0",
+  "description": "Local form-filler bridge with deterministic matching and hosted Groq fallback by default.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js && node --check lib/matcher.js && node --check lib/resolver.js",
+    "check": "node --check server.js && node --check lib/groq.js && node --check lib/provider.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js && node --check lib/matcher.js && node --check lib/resolver.js",
     "test": "node --test test/*.test.js"
   },
   "engines": { "node": ">=18" },

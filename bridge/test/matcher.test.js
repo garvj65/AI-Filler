@@ -102,7 +102,7 @@ test('uses exact-normalized learned answers after canonical profile matching', (
   assert.equal(result.sources.why, 'learned');
 });
 
-test('skips Ollama entirely when every field resolves deterministically', async () => {
+test('skips AI fallback entirely when every field resolves deterministically', async () => {
   let calls = 0;
   const result = await resolveFields({
     fields: [
@@ -110,6 +110,7 @@ test('skips Ollama entirely when every field resolves deterministically', async 
       { id: 'email', question: 'Email', type: 'text' }
     ],
     profile: profile(),
+    aiSource: 'groq',
     aiFallback: async () => { calls++; return {}; }
   });
   assert.equal(calls, 0);
@@ -117,7 +118,7 @@ test('skips Ollama entirely when every field resolves deterministically', async 
   assert.deepEqual(result.sources, { name: 'profile', email: 'profile' });
 });
 
-test('sends only unresolved fields to Ollama and merges answers in original order', async () => {
+test('sends only unresolved fields to the selected AI provider and merges answers in original order', async () => {
   let received = null;
   const fields = [
     { id: 'name', question: 'Full Name', type: 'text' },
@@ -127,6 +128,7 @@ test('sends only unresolved fields to Ollama and merges answers in original orde
   const result = await resolveFields({
     fields,
     profile: profile(),
+    aiSource: 'groq',
     aiFallback: async unresolved => {
       received = unresolved;
       return { why: 'Because the product is interesting.' };
@@ -138,5 +140,5 @@ test('sends only unresolved fields to Ollama and merges answers in original orde
     why: 'Because the product is interesting.',
     github: 'https://github.com/garv'
   });
-  assert.deepEqual(result.sources, { name: 'profile', why: 'ollama', github: 'profile' });
+  assert.deepEqual(result.sources, { name: 'profile', why: 'groq', github: 'profile' });
 });

@@ -2,7 +2,7 @@
 
 const { matchDeterministic } = require('./matcher');
 
-async function resolveFields({ fields, profile, aiFallback }) {
+async function resolveFields({ fields, profile, aiFallback, aiSource = 'ai' }) {
   const deterministic = matchDeterministic(fields, profile);
   const answers = { ...deterministic.answers };
   const sources = { ...deterministic.sources };
@@ -14,7 +14,7 @@ async function resolveFields({ fields, profile, aiFallback }) {
         ? fallbackAnswers[field.id]
         : null;
       answers[field.id] = value;
-      sources[field.id] = value === null || value === undefined ? 'unanswered' : 'ollama';
+      sources[field.id] = value === null || value === undefined ? 'unanswered' : aiSource;
     }
   }
 
@@ -25,7 +25,11 @@ async function resolveFields({ fields, profile, aiFallback }) {
     orderedSources[field.id] = sources[field.id] || 'unanswered';
   }
 
-  return { answers: orderedAnswers, sources: orderedSources, unresolvedCount: deterministic.unresolved.length };
+  return {
+    answers: orderedAnswers,
+    sources: orderedSources,
+    unresolvedCount: deterministic.unresolved.length
+  };
 }
 
 module.exports = { resolveFields };
