@@ -12,6 +12,7 @@ The browser extension scans visible form fields only when you click Start. The l
 Form tab
   -> extension/content.js scans fields and fills answers
   -> extension/background.js POSTs to http://127.0.0.1:8731/fill
+  -> bridge/server.js validates the local candidate profile
   -> bridge/server.js waits for local Ollama readiness
   -> Ollama model is preloaded through /api/generate
   -> fill inference uses http://127.0.0.1:11434/api/chat
@@ -66,7 +67,38 @@ cd AI-Filler
 cp profile.example.json profile.json
 ```
 
+On PowerShell:
+
+```powershell
+Copy-Item profile.example.json profile.json
+```
+
 Fill `profile.json` with your own information.
+
+### Candidate profile schema v1
+
+`profile.json` now has a stable, versioned structure documented in [`profile.schema.json`](profile.schema.json). The main sections are:
+
+```text
+schema_version
+personal
+links
+education
+experience
+current_employment
+skills
+job_preferences
+documents
+profile_text
+learned_answers
+custom
+```
+
+The minimum structurally valid profile contains `schema_version: 1` plus the required object/array sections; individual candidate facts can remain empty when unknown. `documents.resume_path` is the canonical resume location.
+
+Older flat profiles from the original project are still accepted. AI-Filler migrates them to the v1 structure in memory, preserving values such as `resume_path`, education, skills, work experience, and `learned_answers`. The migrated v1 structure is written back the next time `/remember` saves a learned answer. New profiles should use `profile.example.json` directly.
+
+Invalid JSON and invalid schema values now produce explicit profile errors such as `PROFILE_JSON_INVALID`, `PROFILE_SCHEMA_INVALID`, and `PROFILE_FILE_MISSING` rather than failing later during inference.
 
 ### 2. Install Ollama
 
@@ -91,11 +123,12 @@ cd bridge
 node server.js
 ```
 
-The bridge starts listening immediately, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model before a `/fill` request is allowed to run inference. A cold model therefore gets a separate warm-up budget instead of consuming the normal fill timeout.
+The bridge validates the candidate profile, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model before a `/fill` request is allowed to run inference. A cold model therefore gets a separate warm-up budget instead of consuming the normal fill timeout.
 
 Typical startup output:
 
 ```text
+Profile schema v1 ready.
 Checking Ollama at http://127.0.0.1:11434...
 Warming model qwen3:4b-instruct (cold starts may take a while)...
 Form-filler bridge running on http://127.0.0.1:8731
@@ -133,7 +166,7 @@ The bridge uses environment variables instead of provider credentials:
 curl http://localhost:8731/health
 ```
 
-The response includes the configured provider/model plus AI readiness state. If startup initialization fails, `/health` returns the associated Ollama error code and message.
+The response includes provider/model readiness plus profile readiness and schema version. If startup initialization fails, `/health` exposes the relevant state instead of waiting for a fill request to discover it.
 
 ## Quick test without the browser
 
@@ -166,7 +199,7 @@ npm run check
 npm test
 ```
 
-The test suite uses mocked Ollama responses, so it does not require a running model for the deterministic readiness/error/validation tests.
+The test suite uses mocked Ollama responses and local temporary profile files, so the deterministic readiness/error/profile-validation tests do not require a running model.
 
 ## Answer safety
 
@@ -185,9 +218,25 @@ The browser extension behavior is unchanged. The bridge no longer spawns:
 claude -p <prompt>
 ```
 
-Instead it calls the local Ollama API and validates structured answers before returning them to the extension.
+Instead it validates a local candidate profile, calls the local Ollama API, and validates structured answers before returning them to the extension.
 
 ## Troubleshooting
+
+### `PROFILE_FILE_MISSING`
+
+Create your local profile first:
+
+```bash
+cp profile.example.json profile.json
+```
+
+### `PROFILE_JSON_INVALID`
+
+`profile.json` is not valid JSON. Fix its JSON syntax before restarting or filling.
+
+### `PROFILE_SCHEMA_INVALID`
+
+A profile value has the wrong v1 type or shape. Compare it against `profile.example.json` / `profile.schema.json`; the error includes the affected field path.
 
 ### `OLLAMA_UNREACHABLE`
 
@@ -215,7 +264,7 @@ The model was already initialized but a normal fill request exceeded `AI_TIMEOUT
 
 ### Answers are weaker than expected
 
-Make your `profile.json` richer and more explicit. AI-Filler now prefers `null` over obviously unusable label/placeholder echoes. Deterministic profile matching is planned separately so common profile facts will not need LLM inference at all.
+Make your `profile.json` richer and more explicit. AI-Filler prefers `null` over obviously unusable label/placeholder echoes. Deterministic profile matching is planned separately so common profile facts will not need LLM inference at all.
 
 ## Privacy note
 
