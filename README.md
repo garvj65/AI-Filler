@@ -1,58 +1,122 @@
 # AI-Filler
 
-AI-Filler is a Chromium extension plus local Node bridge that fills web forms from a structured candidate profile. Known facts are resolved deterministically; only unresolved questions go to the configured AI provider.
+AI-Filler is a working prototype for turning unstructured candidate documents into structured profile data and using that data to auto-populate web application forms.
 
-**Default AI provider: Groq.** Ollama remains optional for users who want fully local inference.
+> **Prototype status:** complete and validated end-to-end for resume/candidate data and browser-based application forms.
 
-## Architecture
+The project began from a broader idea: use an LLM-assisted document parsing pipeline to extract structured data from PDFs and feed predictable JSON into dynamic forms. The implemented prototype narrows that idea to a concrete use case — resumes and job/application forms — and adds deterministic matching, schema validation, missing-field handling, human review, and browser automation around the LLM layer.
+
+## Project objective
+
+Build an LLM-assisted document-to-form workflow that:
+
+- extracts useful data from unstructured resume documents,
+- converts inconsistent document content into schema-aligned JSON,
+- validates and sanitizes model output instead of trusting raw generations,
+- handles missing or uncertain fields by leaving them blank rather than inventing values,
+- maps known candidate facts into dynamic web-form fields,
+- uses an LLM only when deterministic profile data cannot answer a question,
+- and keeps the user in control through explicit review before profile data is saved.
+
+Within the resume/job-application scope, that objective is implemented.
+
+## What the prototype does
+
+### 1. Resume -> structured profile
+
+A user can upload a PDF, DOCX, or TXT resume from the extension.
 
 ```text
-Form page
-  -> extension scans fields
-  -> local bridge at http://127.0.0.1:8731
-  -> candidate profile schema v1
-  -> deterministic matcher
-  -> exact learned answers
-  -> Groq only for unresolved questions
-  -> validated answers
-  -> extension fills page / asks for unresolved values
-```
-
-## Resume onboarding
-
-AI-Filler can build the candidate profile from a resume instead of requiring manual JSON entry:
-
-```text
-Choose PDF / DOCX / TXT
+Resume
   -> native text extraction
-  -> scanned-PDF quality check
-  -> AI creates schema-v1 draft
-  -> dedicated review page
-  -> user edits/confirms
+  -> text-quality / scanned-PDF check
+  -> deterministic contact/link extraction
+  -> Groq structures the remaining resume content
+  -> schema validation + normalization
+  -> editable profile draft
+  -> explicit user confirmation
   -> non-destructive merge into profile.json
 ```
 
-Nothing is written during draft creation. Existing non-empty profile values, job preferences, `learned_answers`, custom data, and an existing `documents.resume_path` are preserved when the reviewed draft is confirmed.
+The final normalization layer also handles common extraction problems such as label echoes, duplicated summary text inside experience records, latest-role mapping, and graduation-year normalization from explicit education periods.
 
-- PDF: native embedded-text extraction first.
-- DOCX: native raw-text extraction.
-- TXT: direct UTF-8 text extraction.
-- Sparse/image-only PDF: returns `RESUME_OCR_REQUIRED` rather than creating a weak draft.
-- OCR is not run by default; it remains a future fallback for scanned resumes.
+### 2. Structured profile -> form population
 
-The browser does not expose a trustworthy full local path for a selected file, so resume onboarding does not silently change `documents.resume_path`.
+```text
+Web form
+  -> Chromium extension scans fields
+  -> local Node bridge
+  -> validated candidate profile
+  -> deterministic field matcher
+  -> exact learned answers
+  -> Groq fallback for unresolved questions
+  -> answer validation
+  -> browser fills fields / asks user for anything still unknown
+```
 
-## Deterministic job fields
+Known factual data is resolved without an LLM call whenever possible. Subjective or unsupported questions can fall through to Groq or remain unanswered for manual review.
 
-High-confidence matching includes name/contact details, links, education, skills, current company/role, years of experience, employment status/type, notice period, compensation, relocation, work authorization, sponsorship, preferred work location, availability, and joining/start date. Subjective prompts such as `Why this role?` remain AI/manual questions.
+## Architecture
 
-## Requirements
+AI-Filler has three main parts:
 
-- Node.js 20.16+
-- Chrome, Edge, Brave, or another Chromium browser
-- a Groq API key for hosted AI drafting/fallback
+- **Chromium extension** — scans form controls, sends normalized questions to the bridge, fills returned answers, and provides resume upload/review UI.
+- **Local Node bridge** — owns the candidate profile, document extraction, deterministic matching, validation, provider calls, and persistence.
+- **Candidate profile schema** — a versioned JSON structure used as the source of truth for personal data, education, experience, skills, job preferences, links, learned answers, and profile text.
+
+The default hosted provider is **Groq**. An explicit Ollama mode remains available for local inference.
+
+## Reliability and validation choices
+
+The prototype deliberately avoids treating the LLM as the source of truth.
+
+- deterministic facts are preferred over generated answers,
+- LinkedIn/GitHub values must be real matching-domain URLs,
+- label/placeholder echoes are rejected,
+- radio/dropdown/checkbox answers must match options present on the page,
+- unsupported values become blank/null instead of guesses,
+- resume drafts are validated against the candidate schema,
+- resume imports never write directly to the profile before user confirmation,
+- existing non-empty profile values and user-confirmed job preferences are preserved during resume imports,
+- and years of experience, salary, notice period, work authorization, relocation, and similar preferences are not invented from resume dates/text.
+
+## Resume support
+
+Supported input formats:
+
+- **PDF** — native embedded-text extraction
+- **DOCX** — raw-text extraction with Mammoth
+- **TXT** — UTF-8 text extraction
+
+Sparse/image-only PDFs return `RESUME_OCR_REQUIRED` instead of silently producing a weak draft. OCR is intentionally not part of the current prototype because native extraction is preferred when usable text is already present.
+
+## Deterministic job-application fields
+
+High-confidence matching covers common factual fields including:
+
+- name, email, phone and location,
+- LinkedIn, GitHub and portfolio links,
+- education and graduation year,
+- skills,
+- current company and role,
+- years of experience when explicitly known,
+- employment status/type,
+- notice period,
+- current/expected compensation,
+- relocation,
+- work authorization and sponsorship,
+- preferred work location,
+- availability and joining/start date.
+
+Subjective prompts such as `Why this role?`, `Why this company?`, and open-ended stories are intentionally not forced through deterministic matching.
 
 ## Setup
+
+### Requirements
+
+- Node.js **20.16+**
+- Chrome, Edge, Brave, or another Chromium browser
+- a Groq API key for the default hosted provider
 
 ```bash
 git clone https://github.com/garvj65/AI-Filler.git
@@ -60,7 +124,7 @@ cd AI-Filler/bridge
 npm install
 ```
 
-Set the Groq key in the terminal that starts the bridge.
+Set the Groq key in the same terminal that starts the bridge.
 
 PowerShell:
 
@@ -76,22 +140,9 @@ export GROQ_API_KEY="your-key-here"
 node server.js
 ```
 
-Do not put the key in source code, `profile.json`, the extension, README files, or Git commits.
+Then open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the repository's `extension/` directory.
 
-A first-time user can start without `profile.json`; resume onboarding can create one after explicit review and confirmation.
-
-Load the extension from `chrome://extensions` using **Load unpacked** and select `extension/`.
-
-The popup supports:
-
-- **Start — scan & fill**
-- choose a PDF/DOCX/TXT resume and **Create profile draft**
-
-## Candidate profile
-
-`profile.json` follows `profile.schema.json` and stays local. Older flat profiles from the upstream project remain compatible through in-memory migration.
-
-Main sections are `personal`, `links`, `education`, `experience`, `current_employment`, `skills`, `job_preferences`, `documents`, `profile_text`, `learned_answers`, and `custom`.
+A first-time user does not need to manually create `profile.json`; the resume onboarding flow can create it after review and confirmation.
 
 ## Configuration
 
@@ -107,16 +158,16 @@ Main sections are `personal`, `links`, `education`, `experience`, `current_emplo
 
 ## Resume import API
 
-The extension uses:
+The extension uses two local endpoints:
 
 ```text
 POST /resume/draft
 POST /resume/confirm
 ```
 
-`/resume/draft` receives the selected file as base64, performs native extraction, sends bounded extracted text to the selected AI provider, and returns a sanitized profile draft. `/resume/confirm` re-sanitizes the reviewed draft, merges it safely with the existing profile (or a new empty profile), validates the result, and only then writes `profile.json`.
+`/resume/draft` extracts text, creates and sanitizes a draft, then returns it for review. `/resume/confirm` validates the edited draft and merges it with the existing candidate profile before writing `profile.json`.
 
-Maximum resume size is 8 MB. Resume job preferences such as salary, notice period, work authorization, sponsorship, relocation and availability are deliberately not inferred.
+Maximum resume size is 8 MB.
 
 ## Optional local Ollama mode
 
@@ -136,18 +187,53 @@ npm run check
 npm test
 ```
 
-## Troubleshooting
+The prototype has also been manually validated end-to-end with a real resume and browser form-filling flow.
 
-- `RESUME_OCR_REQUIRED`: PDF probably contains images rather than usable embedded text. Use a text-based PDF, DOCX, or TXT for now.
-- `RESUME_FILE_TOO_LARGE`: use a resume 8 MB or smaller.
-- `RESUME_FORMAT_UNSUPPORTED`: use PDF, DOCX, or TXT.
-- `GROQ_API_KEY_MISSING`: set the key in the same terminal that starts `server.js`.
-- `PROFILE_JSON_INVALID` / `PROFILE_SCHEMA_INVALID`: manually edited profile is malformed or invalid.
+## Current scope and limitations
+
+This is a **prototype, not a production SaaS product**.
+
+Implemented scope:
+
+- resumes/candidate documents,
+- structured candidate profiles,
+- browser-based application forms,
+- local profile persistence,
+- deterministic matching with LLM fallback.
+
+Not currently implemented:
+
+- fully generic arbitrary-document -> arbitrary-form mapping,
+- OCR for scanned resumes,
+- cloud profile/account sync,
+- multi-user profiles,
+- a full standalone profile-management application,
+- site-specific application submission automation.
+
+These are deliberate scope boundaries rather than blockers for the validated prototype objective.
 
 ## Privacy
 
-`profile.json` stays local and the Groq key stays in the Node process environment. With the default Groq provider, extracted resume text—not the original resume binary—is sent to Groq to create the draft. Unresolved form questions similarly send the prompt context required for inference. Use `AI_PROVIDER=ollama` if inference payloads must remain local.
+`profile.json` stays local and is ignored by Git. The Groq key remains in the Node process environment. With the default Groq provider, bounded extracted resume text is sent to Groq to structure a draft, and unresolved form questions send the context needed for inference. Use `AI_PROVIDER=ollama` when inference payloads must remain local.
 
-## License
+Do not commit API keys, real `profile.json` data, or personal resumes.
 
-The upstream project is MIT licensed. Preserve the upstream license and attribution when redistributing a modified version.
+## Project status
+
+**Prototype objective fulfilled.**
+
+The final workflow demonstrates the technical feasibility of:
+
+```text
+unstructured resume
+  -> extracted text
+  -> validated structured candidate JSON
+  -> deterministic/LLM-assisted answer resolution
+  -> populated dynamic web form
+```
+
+The next meaningful work, if this prototype is extended, should be driven by real usage rather than additional speculative feature work.
+
+## License and attribution
+
+This repository is based on an MIT-licensed upstream project and preserves the upstream license. Keep the existing license and attribution when redistributing modified versions.
