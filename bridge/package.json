@@ -1,11 +1,11 @@
 {
   "name": "form-filler-bridge",
-  "version": "1.3.0",
-  "description": "Local bridge that uses Ollama to answer scanned form fields from a validated candidate profile.",
+  "version": "1.4.0",
+  "description": "Local form-filler bridge with deterministic profile matching and Ollama fallback.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js",
+    "check": "node --check server.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js && node --check lib/matcher.js && node --check lib/resolver.js",
     "test": "node --test test/*.test.js"
   },
   "engines": { "node": ">=18" },

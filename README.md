@@ -1,25 +1,56 @@
 # AI Form Filler — Local Ollama Edition
 
-Fill Google Forms and ordinary HTML forms from your own `profile.json`, using an AI model that runs locally through Ollama.
+Fill Google Forms and ordinary HTML forms from your own `profile.json`, using deterministic profile matching first and a local Ollama model only for questions that still need AI reasoning.
 
 **No Claude Code. No API key. No AI subscription. No per-request bill.**
 
-The browser extension scans visible form fields only when you click Start. The local Node bridge sends the scanned questions plus your local profile to Ollama on `127.0.0.1`, gets structured JSON answers back, validates them, and fills the form.
+The browser extension scans visible form fields only when you click Start. The local Node bridge validates your profile, resolves known candidate facts directly, reuses exact learned answers, and sends only unresolved questions to Ollama on `127.0.0.1`.
 
 ## Architecture
 
 ```text
 Form tab
-  -> extension/content.js scans fields and fills answers
+  -> extension/content.js scans fields
   -> extension/background.js POSTs to http://127.0.0.1:8731/fill
-  -> bridge/server.js validates the local candidate profile
-  -> bridge/server.js waits for local Ollama readiness
-  -> Ollama model is preloaded through /api/generate
-  -> fill inference uses http://127.0.0.1:11434/api/chat
-  -> answers are sanitized and validated before returning to the extension
+  -> bridge validates candidate profile schema v1
+  -> deterministic matcher resolves known profile fields
+  -> exact-normalized learned answers resolve next
+  -> only unresolved fields go to local Ollama
+  -> AI answers are sanitized and validated
+  -> all answers are merged in original field order
+  -> extension fills the page
 ```
 
-Your `profile.json` remains on your machine. In the default configuration, the model inference also happens on your machine.
+Your `profile.json` remains on your machine. In the default configuration, model inference also happens on your machine.
+
+## Deterministic-first matching
+
+Common candidate facts no longer need LLM inference. The initial matcher covers high-precision aliases for:
+
+- full, first, and last name
+- email and phone
+- city and current location
+- LinkedIn, GitHub, and portfolio
+- degree, university/college, and graduation year
+- skills
+- current role and current company
+- notice period
+- current and expected compensation/CTC
+- relocation willingness
+- availability
+
+Matching is deliberately conservative: AI-Filler normalizes casing, whitespace, punctuation, and common prompt prefixes, but it does not fuzzy-match arbitrary questions. If a field is not a known canonical field, an exact-normalized `learned_answers` match is tried. Anything still unresolved falls back to Ollama.
+
+Precedence is:
+
+```text
+validated profile fact
+  -> exact-normalized learned answer
+  -> Ollama fallback
+  -> unanswered/null
+```
+
+For radio/dropdown/checkbox fields, deterministic values are still constrained to options actually present on the page. If every field is resolved deterministically, no Ollama chat inference request is made for that fill. Answer sources (`profile`, `learned`, `ollama`, `unanswered`) are tracked internally for future confidence/review work, while the extension-facing `/fill` response remains backward compatible.
 
 ## Default model
 
@@ -34,13 +65,8 @@ You can replace it with any compatible local Ollama chat model using `OLLAMA_MOD
 Examples:
 
 ```bash
-# smaller / lighter
 OLLAMA_MODEL=qwen3:1.7b node bridge/server.js
-
-# default
 OLLAMA_MODEL=qwen3:4b-instruct node bridge/server.js
-
-# stronger if your machine has more RAM/VRAM
 OLLAMA_MODEL=qwen3:8b node bridge/server.js
 ```
 
@@ -77,7 +103,7 @@ Fill `profile.json` with your own information.
 
 ### Candidate profile schema v1
 
-`profile.json` now has a stable, versioned structure documented in [`profile.schema.json`](profile.schema.json). The main sections are:
+`profile.json` has a stable, versioned structure documented in [`profile.schema.json`](profile.schema.json). The main sections are:
 
 ```text
 schema_version
@@ -98,7 +124,7 @@ The minimum structurally valid profile contains `schema_version: 1` plus the req
 
 Older flat profiles from the original project are still accepted. AI-Filler migrates them to the v1 structure in memory, preserving values such as `resume_path`, education, skills, work experience, and `learned_answers`. The migrated v1 structure is written back the next time `/remember` saves a learned answer. New profiles should use `profile.example.json` directly.
 
-Invalid JSON and invalid schema values now produce explicit profile errors such as `PROFILE_JSON_INVALID`, `PROFILE_SCHEMA_INVALID`, and `PROFILE_FILE_MISSING` rather than failing later during inference.
+Invalid JSON and invalid schema values produce explicit profile errors such as `PROFILE_JSON_INVALID`, `PROFILE_SCHEMA_INVALID`, and `PROFILE_FILE_MISSING` rather than failing later during inference.
 
 ### 2. Install Ollama
 
@@ -123,7 +149,7 @@ cd bridge
 node server.js
 ```
 
-The bridge validates the candidate profile, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model before a `/fill` request is allowed to run inference. A cold model therefore gets a separate warm-up budget instead of consuming the normal fill timeout.
+The bridge validates the candidate profile, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model. A cold model gets a separate warm-up budget instead of consuming the normal fill timeout. Deterministic-only fills do not invoke Ollama chat inference even though the local model readiness check runs at bridge startup.
 
 Typical startup output:
 
@@ -147,13 +173,11 @@ Ollama ready: qwen3:4b-instruct warmed in 12345 ms.
 
 ## Configuration
 
-The bridge uses environment variables instead of provider credentials:
-
 | Variable | Default | Purpose |
 |---|---|---|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `qwen3:4b-instruct` | Local model to use |
-| `AI_TIMEOUT_MS` | `120000` | Normal fill inference timeout |
+| `OLLAMA_MODEL` | `qwen3:4b-instruct` | Local model to use for unresolved questions |
+| `AI_TIMEOUT_MS` | `120000` | Normal Ollama inference timeout |
 | `OLLAMA_READINESS_TIMEOUT_MS` | `10000` | Ollama availability/model-list timeout |
 | `OLLAMA_WARMUP_TIMEOUT_MS` | `300000` | Separate cold-start/model preload timeout |
 | `OLLAMA_KEEP_ALIVE` | `10m` | How long Ollama should keep the model loaded after use |
@@ -166,7 +190,7 @@ The bridge uses environment variables instead of provider credentials:
 curl http://localhost:8731/health
 ```
 
-The response includes provider/model readiness plus profile readiness and schema version. If startup initialization fails, `/health` exposes the relevant state instead of waiting for a fill request to discover it.
+The response includes provider/model readiness plus profile readiness and schema version.
 
 ## Quick test without the browser
 
@@ -178,7 +202,7 @@ curl -s -X POST localhost:8731/fill \
   -d '{"fields":[{"id":"q0","question":"Your full name","type":"text"},{"id":"q1","question":"Email","type":"text"}]}'
 ```
 
-Expected shape:
+For canonical fields like these, the answers are read directly from the profile and merged into the same response shape:
 
 ```json
 {
@@ -190,6 +214,13 @@ Expected shape:
 }
 ```
 
+For mixed forms, bridge logs show how many fields required Ollama, for example:
+
+```text
+[fill] 1/6 unresolved field(s) -> Ollama/qwen3:4b-instruct...
+[fill] sources: {"profile":5,"ollama":1}
+```
+
 ## Development checks
 
 From `bridge/`:
@@ -199,13 +230,16 @@ npm run check
 npm test
 ```
 
-The test suite uses mocked Ollama responses and local temporary profile files, so the deterministic readiness/error/profile-validation tests do not require a running model.
+The test suite covers Ollama readiness/errors, answer validation, profile schema/migration, deterministic aliases, negative matches, choice constraints, learned-answer precedence, no-Ollama-needed fills, and mixed profile+Ollama resolution.
 
 ## Answer safety
 
-The model is instructed to return `null` rather than guess when profile data does not support an answer. Before answers reach the browser, the bridge also:
+AI-Filler prefers `null` over a guess. Before answers reach the browser, the bridge:
 
-- converts empty text answers to `null`
+- uses deterministic profile facts where high-precision aliases match
+- reuses only exact-normalized learned questions in this phase
+- sends only unresolved fields to Ollama
+- converts empty AI text answers to `null`
 - rejects obvious question/label echoes such as `Filename:`
 - requires radio/dropdown values to match a real page option
 - filters checkbox arrays down to real page options
@@ -218,7 +252,7 @@ The browser extension behavior is unchanged. The bridge no longer spawns:
 claude -p <prompt>
 ```
 
-Instead it validates a local candidate profile, calls the local Ollama API, and validates structured answers before returning them to the extension.
+Instead it validates a local candidate profile, resolves known fields locally, and uses the local Ollama API only as a fallback for unresolved questions.
 
 ## Troubleshooting
 
@@ -240,15 +274,9 @@ A profile value has the wrong v1 type or shape. Compare it against `profile.exam
 
 ### `OLLAMA_UNREACHABLE`
 
-Make sure Ollama is running. Its default local API is:
-
-```text
-http://127.0.0.1:11434
-```
+Make sure Ollama is running at `http://127.0.0.1:11434`.
 
 ### `OLLAMA_MODEL_NOT_FOUND`
-
-Pull the configured model:
 
 ```bash
 ollama pull qwen3:4b-instruct
@@ -256,19 +284,19 @@ ollama pull qwen3:4b-instruct
 
 ### `OLLAMA_WARMUP_TIMEOUT`
 
-The model took longer than the warm-up budget to load. Increase `OLLAMA_WARMUP_TIMEOUT_MS` if the machine needs more cold-start time, or use a smaller local model.
+Increase `OLLAMA_WARMUP_TIMEOUT_MS` if the machine needs more cold-start time, or use a smaller local model.
 
 ### `OLLAMA_INFERENCE_TIMEOUT`
 
-The model was already initialized but a normal fill request exceeded `AI_TIMEOUT_MS`. Increase that limit or use a smaller model if needed.
+A normal unresolved-question inference exceeded `AI_TIMEOUT_MS`. Increase that limit or use a smaller model if needed.
 
-### Answers are weaker than expected
+### A common field still goes to Ollama
 
-Make your `profile.json` richer and more explicit. AI-Filler prefers `null` over obviously unusable label/placeholder echoes. Deterministic profile matching is planned separately so common profile facts will not need LLM inference at all.
+The deterministic matcher intentionally uses a conservative alias registry rather than fuzzy guessing. Add a high-confidence alias with a regression test rather than broad substring matching.
 
 ## Privacy note
 
-With the default `OLLAMA_HOST`, both your profile data and inference stay local. If you deliberately point `OLLAMA_HOST` at another computer or hosted Ollama-compatible endpoint, your form/profile content will be sent there instead.
+With the default `OLLAMA_HOST`, both your profile data and inference stay local. If you deliberately point `OLLAMA_HOST` at another computer or hosted Ollama-compatible endpoint, unresolved form/profile content sent for inference will go there instead.
 
 ## License
 
