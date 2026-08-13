@@ -47,7 +47,16 @@ function validateProfile(profile) {
   }
 
   validateStringFields(errors, profile.links, ['github', 'linkedin', 'twitter', 'portfolio', 'discord'], 'links');
-  validateStringFields(errors, profile.job_preferences, ['applying_for', 'availability', 'current_ctc', 'expected_ctc', 'notice_period', 'work_authorization'], 'job_preferences');
+  validateStringFields(
+    errors,
+    profile.job_preferences,
+    [
+      'applying_for', 'availability', 'current_ctc', 'expected_ctc', 'notice_period',
+      'work_authorization', 'current_employment_status', 'preferred_work_location',
+      'employment_type', 'joining_date'
+    ],
+    'job_preferences'
+  );
   if (isObject(profile.job_preferences) && profile.job_preferences.willing_to_relocate !== undefined && profile.job_preferences.willing_to_relocate !== null && typeof profile.job_preferences.willing_to_relocate !== 'boolean') {
     errors.push('job_preferences.willing_to_relocate must be boolean or null');
   }
@@ -134,12 +143,21 @@ function migrateLegacyProfile(legacy) {
       current_year_of_study: legacy.current_year_of_study || '', class_12_percentage: legacy.class_12_percentage || '', class_10_percentage: legacy.class_10_percentage || ''
     }] : [],
     experience,
-    current_employment: { company: legacy.current_company || '', role: legacy.current_role || '', years_of_experience: legacy.years_of_experience_in_development || '' },
+    current_employment: { company: legacy.current_company || '', role: legacy.current_role || '', years_of_experience: legacy.years_of_experience_in_development || legacy.years_of_experience || '' },
     skills: Array.isArray(legacy.skills) ? legacy.skills : [],
     job_preferences: {
-      applying_for: legacy.applying_for || '', availability: legacy.availability || '', current_ctc: legacy.current_ctc || '', expected_ctc: legacy.expected_ctc || '',
-      notice_period: legacy.notice_period || '', willing_to_relocate: typeof legacy.willing_to_relocate === 'boolean' ? legacy.willing_to_relocate : null,
-      work_authorization: legacy.work_authorization || '', requires_sponsorship: typeof legacy.requires_sponsorship === 'boolean' ? legacy.requires_sponsorship : null
+      applying_for: legacy.applying_for || '',
+      availability: legacy.availability || '',
+      current_ctc: legacy.current_ctc || '',
+      expected_ctc: legacy.expected_ctc || '',
+      notice_period: legacy.notice_period || '',
+      willing_to_relocate: typeof legacy.willing_to_relocate === 'boolean' ? legacy.willing_to_relocate : null,
+      work_authorization: legacy.work_authorization || '',
+      requires_sponsorship: typeof legacy.requires_sponsorship === 'boolean' ? legacy.requires_sponsorship : null,
+      current_employment_status: legacy.current_employment_status || '',
+      preferred_work_location: legacy.preferred_work_location || '',
+      employment_type: legacy.employment_type || '',
+      joining_date: legacy.joining_date || legacy.start_date || ''
     },
     documents: { resume_path: legacy.resume_path || '' },
     profile_text: { bio: legacy.bio || '', competitive_programming: legacy.competitive_programming || '', achievements: Array.isArray(legacy.achievements) ? legacy.achievements : [], notes: legacy.notes || '' },

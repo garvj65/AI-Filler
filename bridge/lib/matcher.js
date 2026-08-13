@@ -10,6 +10,7 @@ function normalizeQuestion(value) {
     .trim()
     .replace(/^(please\s+)?(enter|provide|write|mention|share|select|choose)\s+(your\s+)?/, '')
     .replace(/^(what is|what's|whats)\s+your\s+/, '')
+    .replace(/^(are you|do you|will you|can you)\s+/, '')
     .replace(/^your\s+/, '')
     .replace(/\s+(required|optional)$/g, '')
     .trim();
@@ -39,13 +40,21 @@ const FIELD_DEFINITIONS = [
   { key: 'institution', aliases: ['university', 'college', 'institution', 'university name', 'college name', 'school university', 'educational institution'], get: p => firstEducation(p).institution },
   { key: 'graduation_year', aliases: ['graduation year', 'year of graduation', 'passing year', 'year of passing'], get: p => firstEducation(p).graduation_year },
   { key: 'skills', aliases: ['skills', 'technical skills', 'tech stack', 'technologies', 'technologies known'], get: p => p.skills },
-  { key: 'current_role', aliases: ['current role', 'current job title', 'current title', 'job title'], get: p => p.current_employment && p.current_employment.role },
-  { key: 'current_company', aliases: ['current company', 'current employer', 'present company', 'present employer'], get: p => p.current_employment && p.current_employment.company },
-  { key: 'notice_period', aliases: ['notice period', 'current notice period'], get: p => p.job_preferences && p.job_preferences.notice_period },
-  { key: 'current_ctc', aliases: ['current ctc', 'current compensation', 'current salary', 'present ctc'], get: p => p.job_preferences && p.job_preferences.current_ctc },
-  { key: 'expected_ctc', aliases: ['expected ctc', 'expected compensation', 'expected salary', 'salary expectation', 'salary expectations'], get: p => p.job_preferences && p.job_preferences.expected_ctc },
-  { key: 'relocation', aliases: ['willing to relocate', 'are you willing to relocate', 'open to relocation', 'relocation willingness', 'can you relocate'], get: p => p.job_preferences && p.job_preferences.willing_to_relocate },
-  { key: 'availability', aliases: ['availability', 'when can you start', 'available to start', 'joining availability'], get: p => p.job_preferences && p.job_preferences.availability }
+  { key: 'current_role', aliases: ['current role', 'current job title', 'current title', 'job title', 'current designation', 'present designation'], get: p => p.current_employment && p.current_employment.role },
+  { key: 'current_company', aliases: ['current company', 'current employer', 'present company', 'present employer', 'current organization', 'current organisation', 'present organization', 'present organisation'], get: p => p.current_employment && p.current_employment.company },
+  { key: 'years_of_experience', aliases: ['years of experience', 'total experience', 'total work experience', 'total years of experience', 'overall experience', 'professional experience', 'how many years of experience do you have'], get: p => p.current_employment && p.current_employment.years_of_experience },
+  { key: 'employment_status', aliases: ['employment status', 'current employment status', 'currently employed', 'current work status'], get: p => p.job_preferences && p.job_preferences.current_employment_status },
+  { key: 'notice_period', aliases: ['notice period', 'current notice period', 'notice period in days', 'notice period days', 'serving notice period'], get: p => p.job_preferences && p.job_preferences.notice_period },
+  { key: 'current_ctc', aliases: ['current ctc', 'current compensation', 'current salary', 'present ctc', 'current annual compensation', 'current annual salary', 'current package', 'present salary', 'present compensation'], get: p => p.job_preferences && p.job_preferences.current_ctc },
+  { key: 'expected_ctc', aliases: ['expected ctc', 'expected compensation', 'expected salary', 'salary expectation', 'salary expectations', 'expected annual compensation', 'desired compensation', 'desired salary', 'expected package'], get: p => p.job_preferences && p.job_preferences.expected_ctc },
+  { key: 'relocation', aliases: ['willing to relocate', 'open to relocation', 'relocation willingness', 'relocate'], get: p => p.job_preferences && p.job_preferences.willing_to_relocate },
+  { key: 'work_authorization', aliases: ['work authorization', 'work authorisation', 'authorized to work', 'authorised to work', 'legally authorized to work', 'legally authorised to work', 'legally authorized to work in india', 'legally authorised to work in india', 'eligible to work', 'work eligibility'], get: p => p.job_preferences && p.job_preferences.work_authorization },
+  { key: 'sponsorship', aliases: ['require visa sponsorship', 'require sponsorship', 'need visa sponsorship', 'need sponsorship', 'visa sponsorship required', 'sponsorship required', 'now or in the future require sponsorship', 'now or in the future require visa sponsorship'], get: p => p.job_preferences && p.job_preferences.requires_sponsorship },
+  { key: 'preferred_work_location', aliases: ['preferred location', 'preferred work location', 'preferred job location', 'location preference'], get: p => p.job_preferences && p.job_preferences.preferred_work_location },
+  { key: 'employment_type', aliases: ['employment type', 'preferred employment type', 'job type', 'work type'], get: p => p.job_preferences && p.job_preferences.employment_type },
+  { key: 'joining_date', aliases: ['joining date', 'date of joining', 'start date', 'available start date', 'earliest start date'], get: p => p.job_preferences && p.job_preferences.joining_date },
+  { key: 'availability', aliases: ['availability', 'when can you start', 'available to start', 'joining availability'], get: p => p.job_preferences && p.job_preferences.availability },
+  { key: 'applying_for', aliases: ['applying for', 'application type'], get: p => p.job_preferences && p.job_preferences.applying_for }
 ];
 
 const ALIAS_MAP = new Map();
