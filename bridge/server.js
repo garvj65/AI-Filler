@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { createOllamaClient, OllamaRuntimeError } = require('./lib/ollama');
 const { validateAnswers } = require('./lib/answers');
+const { resolveFields } = require('./lib/resolver');
 const { ProfileError, getResumePath, loadProfileFromFile, saveProfileToFile } = require('./lib/profile');
 
 const PORT = Number(process.env.PORT || 8731);
@@ -156,16 +157,32 @@ const server = http.createServer((req, res) => {
       if (!Array.isArray(fields) || fields.length === 0) throw new Error('Request must include a non-empty "fields" array');
 
       const profile = loadProfile();
-      await readinessPromise;
-      if (!aiState.ready) throw new OllamaRuntimeError(aiState.error && aiState.error.code || 'OLLAMA_NOT_READY', aiState.error && aiState.error.message || 'Ollama is not ready.');
-
       const resumePath = getResumePath(profile) || null;
-      const prompt = buildPrompt(profile, fields);
-      console.log(`[fill] ${fields.length} field(s) -> Ollama/${ollama.model}...`);
-      const raw = await ollama.chat(prompt);
-      const answers = validateAnswers(fields, extractJson(raw));
-      console.log('[fill] answers:', JSON.stringify(answers));
-      return sendJson(res, 200, { answers, resumePath });
+      const result = await resolveFields({
+        fields,
+        profile,
+        aiFallback: async unresolved => {
+          await readinessPromise;
+          if (!aiState.ready) {
+            throw new OllamaRuntimeError(
+              aiState.error && aiState.error.code || 'OLLAMA_NOT_READY',
+              aiState.error && aiState.error.message || 'Ollama is not ready.'
+            );
+          }
+          const prompt = buildPrompt(profile, unresolved);
+          console.log(`[fill] ${unresolved.length}/${fields.length} unresolved field(s) -> Ollama/${ollama.model}...`);
+          const raw = await ollama.chat(prompt);
+          return validateAnswers(unresolved, extractJson(raw));
+        }
+      });
+
+      const sourceCounts = Object.values(result.sources).reduce((counts, source) => {
+        counts[source] = (counts[source] || 0) + 1;
+        return counts;
+      }, {});
+      console.log('[fill] sources:', JSON.stringify(sourceCounts));
+      console.log('[fill] answers:', JSON.stringify(result.answers));
+      return sendJson(res, 200, { answers: result.answers, resumePath });
     } catch (e) {
       console.error('[error]', e.code ? `${e.code}: ${e.message}` : e.message);
       const status = e instanceof OllamaRuntimeError ? 503 : e instanceof ProfileError ? 422 : 500;
