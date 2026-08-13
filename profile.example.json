@@ -35,14 +35,18 @@
   "current_employment": { "company": "Company A", "role": "Software Engineer", "years_of_experience": "2+ years" },
   "skills": ["Python", "JavaScript", "SQL", "React", "Node.js"],
   "job_preferences": {
-    "applying_for": "Internship",
+    "applying_for": "Full-time",
     "availability": "Immediately",
     "current_ctc": "",
     "expected_ctc": "",
     "notice_period": "",
     "willing_to_relocate": null,
     "work_authorization": "",
-    "requires_sponsorship": null
+    "requires_sponsorship": null,
+    "current_employment_status": "",
+    "preferred_work_location": "",
+    "employment_type": "Full-time",
+    "joining_date": ""
   },
   "documents": { "resume_path": "/absolute/path/to/your/Resume.pdf" },
   "profile_text": {

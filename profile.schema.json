@@ -19,7 +19,23 @@
     "experience": { "type": "array", "items": { "type": "object", "properties": { "company": { "type": "string" }, "title": { "type": "string" }, "period": { "type": "string" }, "description": { "type": "string" } } } },
     "current_employment": { "type": "object", "properties": { "company": { "type": "string" }, "role": { "type": "string" }, "years_of_experience": { "type": "string" } } },
     "skills": { "type": "array", "items": { "type": "string" } },
-    "job_preferences": { "type": "object", "properties": { "applying_for": { "type": "string" }, "availability": { "type": "string" }, "current_ctc": { "type": "string" }, "expected_ctc": { "type": "string" }, "notice_period": { "type": "string" }, "willing_to_relocate": { "type": ["boolean", "null"] }, "work_authorization": { "type": "string" }, "requires_sponsorship": { "type": ["boolean", "null"] } } },
+    "job_preferences": {
+      "type": "object",
+      "properties": {
+        "applying_for": { "type": "string" },
+        "availability": { "type": "string" },
+        "current_ctc": { "type": "string" },
+        "expected_ctc": { "type": "string" },
+        "notice_period": { "type": "string" },
+        "willing_to_relocate": { "type": ["boolean", "null"] },
+        "work_authorization": { "type": "string" },
+        "requires_sponsorship": { "type": ["boolean", "null"] },
+        "current_employment_status": { "type": "string" },
+        "preferred_work_location": { "type": "string" },
+        "employment_type": { "type": "string" },
+        "joining_date": { "type": "string" }
+      }
+    },
     "documents": { "type": "object", "properties": { "resume_path": { "type": "string" } } },
     "profile_text": { "type": "object", "properties": { "bio": { "type": "string" }, "competitive_programming": { "type": "string" }, "achievements": { "type": "array", "items": { "type": "string" } }, "notes": { "type": "string" } } },
     "learned_answers": { "type": "array", "items": { "type": "object", "required": ["question", "answer"], "properties": { "question": { "type": "string", "minLength": 1 }, "answer": {} } } },
