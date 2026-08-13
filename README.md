@@ -1,87 +1,70 @@
-# AI Form Filler — Local Ollama Edition
+# AI-Filler
 
-Fill Google Forms and ordinary HTML forms from your own `profile.json`, using deterministic profile matching first and a local Ollama model only for questions that still need AI reasoning.
+Fill Google Forms and ordinary HTML forms from your own candidate profile. AI-Filler resolves known facts deterministically first and sends only unresolved questions to an LLM.
 
-**No Claude Code. No API key. No AI subscription. No per-request bill.**
-
-The browser extension scans visible form fields only when you click Start. The local Node bridge validates your profile, resolves known candidate facts directly, reuses exact learned answers, and sends only unresolved questions to Ollama on `127.0.0.1`.
+**Default AI provider: Groq.** No local model or GPU inference is required for the normal setup.
 
 ## Architecture
 
 ```text
 Form tab
-  -> extension/content.js scans fields
-  -> extension/background.js POSTs to http://127.0.0.1:8731/fill
-  -> bridge validates candidate profile schema v1
+  -> extension scans fields
+  -> local Node bridge at http://127.0.0.1:8731
+  -> validated candidate profile schema v1
   -> deterministic matcher resolves known profile fields
-  -> exact-normalized learned answers resolve next
-  -> only unresolved fields go to local Ollama
-  -> AI answers are sanitized and validated
-  -> all answers are merged in original field order
-  -> extension fills the page
+  -> exact learned answers resolve next
+  -> only unresolved fields go to Groq
+  -> AI answers are validated
+  -> merged answers return to the extension
 ```
 
-Your `profile.json` remains on your machine. In the default configuration, model inference also happens on your machine.
+The browser extension never receives your Groq API key. The key exists only in the Node bridge process environment.
 
 ## Deterministic-first matching
 
-Common candidate facts no longer need LLM inference. The initial matcher covers high-precision aliases for:
+Common candidate facts do not need LLM inference. The matcher currently covers high-precision aliases for:
 
 - full, first, and last name
 - email and phone
-- city and current location
+- city/current location
 - LinkedIn, GitHub, and portfolio
 - degree, university/college, and graduation year
 - skills
-- current role and current company
+- current role and company
 - notice period
-- current and expected compensation/CTC
+- current and expected CTC/compensation
 - relocation willingness
 - availability
 
-Matching is deliberately conservative: AI-Filler normalizes casing, whitespace, punctuation, and common prompt prefixes, but it does not fuzzy-match arbitrary questions. If a field is not a known canonical field, an exact-normalized `learned_answers` match is tried. Anything still unresolved falls back to Ollama.
-
-Precedence is:
+Precedence:
 
 ```text
 validated profile fact
   -> exact-normalized learned answer
-  -> Ollama fallback
+  -> selected AI provider
   -> unanswered/null
 ```
 
-For radio/dropdown/checkbox fields, deterministic values are still constrained to options actually present on the page. If every field is resolved deterministically, no Ollama chat inference request is made for that fill. Answer sources (`profile`, `learned`, `ollama`, `unanswered`) are tracked internally for future confidence/review work, while the extension-facing `/fill` response remains backward compatible.
+If every field is resolved deterministically, AI-Filler makes no hosted LLM request for that fill.
 
-## Default model
+## Default hosted model
 
 The bridge defaults to:
 
 ```text
-qwen3:4b-instruct
+AI_PROVIDER=groq
+GROQ_MODEL=llama-3.1-8b-instant
 ```
 
-You can replace it with any compatible local Ollama chat model using `OLLAMA_MODEL`.
-
-Examples:
-
-```bash
-OLLAMA_MODEL=qwen3:1.7b node bridge/server.js
-OLLAMA_MODEL=qwen3:4b-instruct node bridge/server.js
-OLLAMA_MODEL=qwen3:8b node bridge/server.js
-```
-
-PowerShell:
-
-```powershell
-$env:OLLAMA_MODEL="qwen3:8b"
-node bridge/server.js
-```
+Groq is called through its OpenAI-compatible Chat Completions API using JSON Object Mode. Existing answer validation still constrains radio/dropdown/checkbox answers to options actually present on the page.
 
 ## Requirements
 
 - Node.js 18+
-- Ollama
 - Chrome, Edge, Brave, or another Chromium browser
+- a Groq API key for questions that require LLM fallback
+
+Ollama is optional and is no longer required for the default setup.
 
 ## Setup
 
@@ -93,7 +76,7 @@ cd AI-Filler
 cp profile.example.json profile.json
 ```
 
-On PowerShell:
+PowerShell:
 
 ```powershell
 Copy-Item profile.example.json profile.json
@@ -101,9 +84,11 @@ Copy-Item profile.example.json profile.json
 
 Fill `profile.json` with your own information.
 
-### Candidate profile schema v1
+### 2. Candidate profile schema
 
-`profile.json` has a stable, versioned structure documented in [`profile.schema.json`](profile.schema.json). The main sections are:
+`profile.json` uses the versioned structure documented in `profile.schema.json`.
+
+Main sections:
 
 ```text
 schema_version
@@ -120,26 +105,30 @@ learned_answers
 custom
 ```
 
-The minimum structurally valid profile contains `schema_version: 1` plus the required object/array sections; individual candidate facts can remain empty when unknown. `documents.resume_path` is the canonical resume location.
+Older flat profiles from the original project remain accepted and are migrated in memory.
 
-Older flat profiles from the original project are still accepted. AI-Filler migrates them to the v1 structure in memory, preserving values such as `resume_path`, education, skills, work experience, and `learned_answers`. The migrated v1 structure is written back the next time `/remember` saves a learned answer. New profiles should use `profile.example.json` directly.
+### 3. Create a Groq API key
 
-Invalid JSON and invalid schema values produce explicit profile errors such as `PROFILE_JSON_INVALID`, `PROFILE_SCHEMA_INVALID`, and `PROFILE_FILE_MISSING` rather than failing later during inference.
+Create an API key in the Groq Console. Do **not** paste the key into `profile.json`, the extension, source files, README files, or Git commits.
 
-### 2. Install Ollama
+Set it only in the terminal that starts the bridge.
 
-Install Ollama for your operating system and make sure the local service is running.
+PowerShell:
 
-### 3. Pull the default model
-
-```bash
-ollama pull qwen3:4b-instruct
+```powershell
+$env:GROQ_API_KEY="your-key-here"
 ```
 
-You can verify it independently with:
+macOS/Linux:
 
 ```bash
-ollama run qwen3:4b-instruct
+export GROQ_API_KEY="your-key-here"
+```
+
+Optionally choose another Groq model:
+
+```powershell
+$env:GROQ_MODEL="llama-3.1-8b-instant"
 ```
 
 ### 4. Start the bridge
@@ -149,40 +138,40 @@ cd bridge
 node server.js
 ```
 
-The bridge validates the candidate profile, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model. A cold model gets a separate warm-up budget instead of consuming the normal fill timeout. Deterministic-only fills do not invoke Ollama chat inference even though the local model readiness check runs at bridge startup.
-
-Typical startup output:
+Typical output:
 
 ```text
 Profile schema v1 ready.
-Checking Ollama at http://127.0.0.1:11434...
-Warming model qwen3:4b-instruct (cold starts may take a while)...
+Checking AI provider groq/llama-3.1-8b-instant...
 Form-filler bridge running on http://127.0.0.1:8731
-AI: Ollama model qwen3:4b-instruct at http://127.0.0.1:11434
-No API key or subscription required.
-Ollama ready: qwen3:4b-instruct warmed in 12345 ms.
+AI: groq/llama-3.1-8b-instant at https://api.groq.com
+Hosted inference enabled. No local LLM/GPU processing is required.
+AI provider ready: groq/llama-3.1-8b-instant.
 ```
+
+No Ollama process is started or contacted in the default configuration.
 
 ### 5. Load the extension
 
 1. Open `chrome://extensions`.
 2. Turn on Developer mode.
 3. Click **Load unpacked**.
-4. Select the `extension/` folder.
-5. Open a form, click the extension, and start the scan/fill flow.
+4. Select the `extension/` directory.
+5. Open a form and start AI-Filler.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `qwen3:4b-instruct` | Local model to use for unresolved questions |
-| `AI_TIMEOUT_MS` | `120000` | Normal Ollama inference timeout |
-| `OLLAMA_READINESS_TIMEOUT_MS` | `10000` | Ollama availability/model-list timeout |
-| `OLLAMA_WARMUP_TIMEOUT_MS` | `300000` | Separate cold-start/model preload timeout |
-| `OLLAMA_KEEP_ALIVE` | `10m` | How long Ollama should keep the model loaded after use |
-| `PORT` | `8731` | Bridge port |
-| `BRIDGE_HOST` | `127.0.0.1` | Bridge bind address |
+| `AI_PROVIDER` | `groq` | AI fallback provider: `groq` or `ollama` |
+| `GROQ_API_KEY` | none | Groq API key; keep it out of project files |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model for unresolved questions |
+| `GROQ_API_URL` | Groq Chat Completions endpoint | Optional endpoint override |
+| `AI_TIMEOUT_MS` | `60000` for Groq | AI inference timeout |
+| `PORT` | `8731` | Local bridge port |
+| `BRIDGE_HOST` | `127.0.0.1` | Local bridge bind address |
+
+Ollama-only variables (`OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_READINESS_TIMEOUT_MS`, `OLLAMA_WARMUP_TIMEOUT_MS`, `OLLAMA_KEEP_ALIVE`) are used only when `AI_PROVIDER=ollama`.
 
 ## Health check
 
@@ -190,11 +179,19 @@ Ollama ready: qwen3:4b-instruct warmed in 12345 ms.
 curl http://localhost:8731/health
 ```
 
-The response includes provider/model readiness plus profile readiness and schema version.
+With Groq configured, the response reports:
 
-## Quick test without the browser
+```json
+{
+  "ok": true,
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant"
+}
+```
 
-Start Ollama and the bridge, then run:
+If the Groq key is missing, health exposes `GROQ_API_KEY_MISSING`. Deterministic matching code remains available, but any unresolved field requiring AI fallback will fail until a key is configured.
+
+## Quick fill test
 
 ```bash
 curl -s -X POST localhost:8731/fill \
@@ -202,24 +199,28 @@ curl -s -X POST localhost:8731/fill \
   -d '{"fields":[{"id":"q0","question":"Your full name","type":"text"},{"id":"q1","question":"Email","type":"text"}]}'
 ```
 
-For canonical fields like these, the answers are read directly from the profile and merged into the same response shape:
+Canonical fields like these should resolve from `profile.json` without a Groq request.
 
-```json
-{
-  "answers": {
-    "q0": "Jane Doe",
-    "q1": "jane.doe@example.com"
-  },
-  "resumePath": null
-}
-```
-
-For mixed forms, bridge logs show how many fields required Ollama, for example:
+For mixed forms, logs show only unresolved fields going to the selected provider:
 
 ```text
-[fill] 1/6 unresolved field(s) -> Ollama/qwen3:4b-instruct...
-[fill] sources: {"profile":5,"ollama":1}
+[fill] 1/6 unresolved field(s) -> groq/llama-3.1-8b-instant...
+[fill] sources: {"profile":5,"groq":1}
 ```
+
+## Optional local Ollama mode
+
+Ollama is preserved as an opt-in provider for users who prefer fully local inference.
+
+PowerShell:
+
+```powershell
+$env:AI_PROVIDER="ollama"
+$env:OLLAMA_MODEL="qwen3:4b-instruct"
+node server.js
+```
+
+Only this explicit mode performs Ollama readiness checks/model warm-up and uses local model compute.
 
 ## Development checks
 
@@ -230,74 +231,55 @@ npm run check
 npm test
 ```
 
-The test suite covers Ollama readiness/errors, answer validation, profile schema/migration, deterministic aliases, negative matches, choice constraints, learned-answer precedence, no-Ollama-needed fills, and mixed profile+Ollama resolution.
+Provider tests use mocked HTTP responses and do not require a real Groq key or running Ollama model.
 
 ## Answer safety
 
-AI-Filler prefers `null` over a guess. Before answers reach the browser, the bridge:
+AI-Filler prefers `null` over a guess. Before values reach the browser, the bridge:
 
-- uses deterministic profile facts where high-precision aliases match
-- reuses only exact-normalized learned questions in this phase
-- sends only unresolved fields to Ollama
+- resolves high-confidence profile facts deterministically
+- reuses exact-normalized learned answers
+- sends only unresolved fields to the AI provider
+- requests JSON output
 - converts empty AI text answers to `null`
-- rejects obvious question/label echoes such as `Filename:`
-- requires radio/dropdown values to match a real page option
-- filters checkbox arrays down to real page options
-
-## What changed from the Claude Code version
-
-The browser extension behavior is unchanged. The bridge no longer spawns:
-
-```text
-claude -p <prompt>
-```
-
-Instead it validates a local candidate profile, resolves known fields locally, and uses the local Ollama API only as a fallback for unresolved questions.
+- rejects obvious label/question echoes
+- requires radio/dropdown values to match page options
+- filters checkbox arrays to real page options
 
 ## Troubleshooting
 
+### `GROQ_API_KEY_MISSING`
+
+Set `GROQ_API_KEY` in the same terminal where you run `node server.js`.
+
+### `GROQ_AUTH_FAILED`
+
+The configured API key was rejected. Check the environment variable or create a new Groq key.
+
+### `GROQ_RATE_LIMITED`
+
+The current free-plan/project limit was reached. Wait for the indicated retry period or review your Groq project limits.
+
+### `GROQ_TIMEOUT`
+
+The hosted inference request exceeded `AI_TIMEOUT_MS`.
+
 ### `PROFILE_FILE_MISSING`
 
-Create your local profile first:
+Create the local profile:
 
 ```bash
 cp profile.example.json profile.json
 ```
 
-### `PROFILE_JSON_INVALID`
+### `PROFILE_JSON_INVALID` / `PROFILE_SCHEMA_INVALID`
 
-`profile.json` is not valid JSON. Fix its JSON syntax before restarting or filling.
-
-### `PROFILE_SCHEMA_INVALID`
-
-A profile value has the wrong v1 type or shape. Compare it against `profile.example.json` / `profile.schema.json`; the error includes the affected field path.
-
-### `OLLAMA_UNREACHABLE`
-
-Make sure Ollama is running at `http://127.0.0.1:11434`.
-
-### `OLLAMA_MODEL_NOT_FOUND`
-
-```bash
-ollama pull qwen3:4b-instruct
-```
-
-### `OLLAMA_WARMUP_TIMEOUT`
-
-Increase `OLLAMA_WARMUP_TIMEOUT_MS` if the machine needs more cold-start time, or use a smaller local model.
-
-### `OLLAMA_INFERENCE_TIMEOUT`
-
-A normal unresolved-question inference exceeded `AI_TIMEOUT_MS`. Increase that limit or use a smaller model if needed.
-
-### A common field still goes to Ollama
-
-The deterministic matcher intentionally uses a conservative alias registry rather than fuzzy guessing. Add a high-confidence alias with a regression test rather than broad substring matching.
+Fix the profile syntax/shape using `profile.example.json` and `profile.schema.json` as references.
 
 ## Privacy note
 
-With the default `OLLAMA_HOST`, both your profile data and inference stay local. If you deliberately point `OLLAMA_HOST` at another computer or hosted Ollama-compatible endpoint, unresolved form/profile content sent for inference will go there instead.
+`profile.json` remains a local file and the API key stays in the Node process environment. However, when a question requires hosted Groq inference, the bridge sends the unresolved question and candidate-profile context needed by the prompt to Groq. Use `AI_PROVIDER=ollama` if you require the inference payload to remain entirely local.
 
 ## License
 
-The upstream repository is MIT licensed. Preserve the upstream license and attribution when redistributing a modified version.
+The upstream project is MIT licensed. Preserve the upstream license and attribution when redistributing a modified version.
