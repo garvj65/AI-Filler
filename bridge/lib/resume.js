@@ -234,6 +234,72 @@ function sanitizeResumeDraft(raw) {
   return draft;
 }
 
+function comparableText(value) {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function isNearDuplicateText(left, right) {
+  const a = comparableText(left);
+  const b = comparableText(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) < 80) return false;
+  const aTokens = new Set(a.split(' ').filter(Boolean));
+  const bTokens = new Set(b.split(' ').filter(Boolean));
+  if (!aTokens.size || !bTokens.size) return false;
+  let intersection = 0;
+  for (const token of aTokens) if (bTokens.has(token)) intersection++;
+  const containment = intersection / Math.min(aTokens.size, bTokens.size);
+  const lengthRatio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  return containment >= 0.9 && lengthRatio >= 0.8;
+}
+
+const MONTH_INDEX = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+  may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9,
+  sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11,
+  dec: 12, december: 12
+};
+
+function parsePeriodRank(period) {
+  const text = cleanText(period).replace(/[–—]/g, '-');
+  if (!text) return null;
+  const dateMatches = [];
+  const pattern = /\b(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+)?((?:19|20)\d{2})\b/gi;
+  for (const match of text.matchAll(pattern)) {
+    const month = match[1] ? MONTH_INDEX[match[1].toLowerCase()] || 0 : 0;
+    const year = Number(match[2]);
+    dateMatches.push({ year, month, key: year * 12 + month });
+  }
+  if (!dateMatches.length) return null;
+  const ongoing = /\b(present|current|now|ongoing)\b/i.test(text);
+  const start = dateMatches[0];
+  const end = ongoing ? { key: Number.MAX_SAFE_INTEGER } : dateMatches[dateMatches.length - 1];
+  return { endKey: end.key, startKey: start.key, ongoing };
+}
+
+function latestDatedExperience(experience) {
+  let best = null;
+  for (let index = 0; index < (experience || []).length; index++) {
+    const item = experience[index];
+    if (!item || !item.company || !item.title) continue;
+    const rank = parsePeriodRank(item.period);
+    if (!rank) continue;
+    const candidate = { item, index, ...rank };
+    if (!best || candidate.endKey > best.endKey || (candidate.endKey === best.endKey && candidate.startKey > best.startKey) || (candidate.endKey === best.endKey && candidate.startKey === best.startKey && candidate.index < best.index)) {
+      best = candidate;
+    }
+  }
+  return best && best.item || null;
+}
+
+function deriveGraduationYear(duration) {
+  const text = cleanText(duration).replace(/[–—]/g, '-');
+  if (!text || /\b(present|current|now|ongoing)\b/i.test(text)) return '';
+  const years = [...text.matchAll(/\b(?:19|20)\d{2}\b/g)].map(match => match[0]);
+  return years.length >= 2 ? years[years.length - 1] : '';
+}
+
 function finalizeResumeDraft(raw, resumeText) {
   const draft = sanitizeResumeDraft(raw);
   const facts = extractDeterministicResumeFacts(resumeText);
@@ -242,6 +308,25 @@ function finalizeResumeDraft(raw, resumeText) {
   if (facts.linkedin) draft.links.linkedin = facts.linkedin;
   if (facts.github) draft.links.github = facts.github;
   if (facts.portfolio) draft.links.portfolio = facts.portfolio;
+
+  for (const item of draft.education) {
+    if (!item.graduation_year) item.graduation_year = deriveGraduationYear(item.duration);
+  }
+
+  if (draft.profile_text.bio) {
+    for (const item of draft.experience) {
+      if (item.description && isNearDuplicateText(item.description, draft.profile_text.bio)) item.description = '';
+    }
+  }
+
+  const latest = latestDatedExperience(draft.experience);
+  if (latest) {
+    if (!draft.current_employment.company) draft.current_employment.company = latest.company;
+    if (!draft.current_employment.role) draft.current_employment.role = latest.title;
+  }
+
+  const errors = validateProfile(draft);
+  if (errors.length) throw new ResumeImportError('RESUME_DRAFT_INVALID', `Final resume draft is invalid: ${errors.join('; ')}`, errors);
   return draft;
 }
 
@@ -262,7 +347,7 @@ function mergeResumeDraft(existingProfile,incomingDraft){
 }
 
 function buildResumeDraftPrompt(text) {
-  return `You are extracting a candidate profile from resume text. Return ONLY JSON matching the requested profile shape.\n\nRESUME TEXT:\n${cleanText(text).slice(0,MAX_RESUME_TEXT_CHARS)}\n\nRules:\n- Use ONLY facts supported by the resume text.\n- If a value is absent or uncertain, use an empty string, empty array, or null rather than guessing.\n- Do not infer work authorization, sponsorship, salary, notice period, relocation preference, availability, or other job preferences from a resume.\n- Keep job_preferences empty/default.\n- Keep documents.resume_path empty.\n- Keep learned_answers empty and custom empty.\n- Do not return labels such as \"LinkedIn\", \"GitHub\", \"Portfolio\", \"Email\", \"Phone\", \"Company\", \"Role\", \"Degree\", or \"Duration\" as field values.\n- For links, return the actual URL only. If the URL is not present in the resume text, leave that link empty.\n- current_employment should reflect the current/latest role only when the resume clearly supports it.\n- years_of_experience should be copied only if explicitly stated; do not calculate it from dates.\n- For EVERY experience entry, keep company, title, period, and description separate. Never put a project name into title/period unless the resume explicitly presents it that way. If title or period is not supported, leave that field empty.\n- For EVERY education entry, keep institution, degree, duration, and graduation_year separate. Do not copy one field into another. Leave unsupported fields empty.\n- profile_text.bio may be a concise factual summary using only resume-supported information.\n\nReturn this JSON shape:\n${JSON.stringify(createEmptyProfile(),null,2)}`;
+  return `You are extracting a candidate profile from resume text. Return ONLY JSON matching the requested profile shape.\n\nRESUME TEXT:\n${cleanText(text).slice(0,MAX_RESUME_TEXT_CHARS)}\n\nRules:\n- Use ONLY facts supported by the resume text.\n- If a value is absent or uncertain, use an empty string, empty array, or null rather than guessing.\n- Do not infer work authorization, sponsorship, salary, notice period, relocation preference, availability, or other job preferences from a resume.\n- Keep job_preferences empty/default.\n- Keep documents.resume_path empty.\n- Keep learned_answers empty and custom empty.\n- Do not return labels such as "LinkedIn", "GitHub", "Portfolio", "Email", "Phone", "Company", "Role", "Degree", or "Duration" as field values.\n- For links, return the actual URL only. If the URL is not present in the resume text, leave that link empty.\n- current_employment should reflect the current/latest role only when the resume clearly supports it.\n- years_of_experience should be copied only if explicitly stated; do not calculate it from dates.\n- For EVERY experience entry, keep company, title, period, and description separate. Never put a project name into title/period unless the resume explicitly presents it that way. If title or period is not supported, leave that field empty.\n- Do not reuse profile_text.bio/summary text as an experience description. If a role description is not supported by the resume, leave it empty.\n- For EVERY education entry, keep institution, degree, duration, and graduation_year separate. Do not copy one field into another. If a bounded duration explicitly ends in a graduation year, graduation_year may copy that explicit ending year; otherwise leave unsupported fields empty.\n- profile_text.bio may be a concise factual summary using only resume-supported information.\n\nReturn this JSON shape:\n${JSON.stringify(createEmptyProfile(),null,2)}`;
 }
 
-module.exports={MAX_RESUME_BYTES,MAX_RESUME_TEXT_CHARS,ResumeImportError,buildResumeDraftPrompt,cleanText,decodeBase64,detectFormat,extractDeterministicResumeFacts,extractResumeText,finalizeResumeDraft,isLabelEcho,mergeResumeDraft,sanitizeResumeDraft,textQuality};
+module.exports={MAX_RESUME_BYTES,MAX_RESUME_TEXT_CHARS,ResumeImportError,buildResumeDraftPrompt,cleanText,decodeBase64,detectFormat,deriveGraduationYear,extractDeterministicResumeFacts,extractResumeText,finalizeResumeDraft,isLabelEcho,isNearDuplicateText,latestDatedExperience,mergeResumeDraft,sanitizeResumeDraft,textQuality};
