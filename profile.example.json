@@ -1,41 +1,56 @@
 {
-  "full_name": "Jane Doe",
-  "resume_path": "/absolute/path/to/your/Resume.pdf",
-  "first_name": "Jane",
-  "last_name": "Doe",
-  "primary_email": "jane.doe@example.com",
-  "alternate_email": "",
-  "phone": "+1-555-0100",
-  "github": "https://github.com/your-handle",
-  "linkedin": "https://www.linkedin.com/in/your-handle/",
-  "twitter": "",
-  "portfolio": "",
-  "discord": "",
-  "college": "Your University",
-  "degree": "B.Tech. in Computer Science",
-  "education_duration": "2021 - 2025",
-  "graduation_year": "2025",
-  "current_year_of_study": "",
-  "class_12_percentage": "",
-  "class_10_percentage": "",
-  "home_city": "Your City",
-  "home_state": "Your State",
-  "country": "Your Country",
-  "gender": "",
-  "current_role": "Software Engineer",
-  "applying_for": "Internship",
-  "availability": "Immediately",
-  "years_of_experience_in_development": "2+ years",
-  "current_ctc": "",
-  "work_experience": [
-    "Company A - Software Engineer (2024 - present): brief description of what you did.",
-    "Company B - Intern (2023): brief description."
+  "schema_version": 1,
+  "personal": {
+    "full_name": "Jane Doe",
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "primary_email": "jane.doe@example.com",
+    "alternate_email": "",
+    "phone": "+1-555-0100",
+    "gender": "",
+    "location": { "city": "Your City", "state": "Your State", "country": "Your Country" }
+  },
+  "links": {
+    "github": "https://github.com/your-handle",
+    "linkedin": "https://www.linkedin.com/in/your-handle/",
+    "twitter": "",
+    "portfolio": "",
+    "discord": ""
+  },
+  "education": [
+    {
+      "institution": "Your University",
+      "degree": "B.Tech. in Computer Science",
+      "duration": "2021 - 2025",
+      "graduation_year": "2025",
+      "current_year_of_study": "",
+      "class_12_percentage": "",
+      "class_10_percentage": ""
+    }
   ],
-  "positions": [],
+  "experience": [
+    { "company": "Company A", "title": "Software Engineer", "period": "2024 - present", "description": "Brief description of what you did." },
+    { "company": "Company B", "title": "Intern", "period": "2023", "description": "Brief description." }
+  ],
+  "current_employment": { "company": "Company A", "role": "Software Engineer", "years_of_experience": "2+ years" },
   "skills": ["Python", "JavaScript", "SQL", "React", "Node.js"],
-  "competitive_programming": "",
-  "achievements": [],
-  "bio": "One or two sentences about who you are and what you build.",
-  "notes": "Use primary_email for all email questions. Only answer from this data; do not invent values not present here. In free-text 'about you' answers, do not mention anything you don't want shared.",
-  "learned_answers": []
+  "job_preferences": {
+    "applying_for": "Internship",
+    "availability": "Immediately",
+    "current_ctc": "",
+    "expected_ctc": "",
+    "notice_period": "",
+    "willing_to_relocate": null,
+    "work_authorization": "",
+    "requires_sponsorship": null
+  },
+  "documents": { "resume_path": "/absolute/path/to/your/Resume.pdf" },
+  "profile_text": {
+    "bio": "One or two sentences about who you are and what you build.",
+    "competitive_programming": "",
+    "achievements": [],
+    "notes": "Only answer from this data; do not invent values not present here."
+  },
+  "learned_answers": [],
+  "custom": {}
 }
