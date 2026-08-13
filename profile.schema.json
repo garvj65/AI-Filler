@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/garvj65/AI-Filler/profile.schema.json",
+  "title": "AI-Filler Candidate Profile v1",
+  "type": "object",
+  "required": ["schema_version", "personal", "links", "education", "experience", "skills", "job_preferences", "documents", "learned_answers"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "personal": {
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string" }, "first_name": { "type": "string" }, "last_name": { "type": "string" },
+        "primary_email": { "type": "string" }, "alternate_email": { "type": "string" }, "phone": { "type": "string" }, "gender": { "type": "string" },
+        "location": { "type": "object", "properties": { "city": { "type": "string" }, "state": { "type": "string" }, "country": { "type": "string" } } }
+      }
+    },
+    "links": { "type": "object", "properties": { "github": { "type": "string" }, "linkedin": { "type": "string" }, "twitter": { "type": "string" }, "portfolio": { "type": "string" }, "discord": { "type": "string" } } },
+    "education": { "type": "array", "items": { "type": "object", "properties": { "institution": { "type": "string" }, "degree": { "type": "string" }, "duration": { "type": "string" }, "graduation_year": { "type": "string" }, "current_year_of_study": { "type": "string" }, "class_12_percentage": { "type": "string" }, "class_10_percentage": { "type": "string" } } } },
+    "experience": { "type": "array", "items": { "type": "object", "properties": { "company": { "type": "string" }, "title": { "type": "string" }, "period": { "type": "string" }, "description": { "type": "string" } } } },
+    "current_employment": { "type": "object", "properties": { "company": { "type": "string" }, "role": { "type": "string" }, "years_of_experience": { "type": "string" } } },
+    "skills": { "type": "array", "items": { "type": "string" } },
+    "job_preferences": { "type": "object", "properties": { "applying_for": { "type": "string" }, "availability": { "type": "string" }, "current_ctc": { "type": "string" }, "expected_ctc": { "type": "string" }, "notice_period": { "type": "string" }, "willing_to_relocate": { "type": ["boolean", "null"] }, "work_authorization": { "type": "string" }, "requires_sponsorship": { "type": ["boolean", "null"] } } },
+    "documents": { "type": "object", "properties": { "resume_path": { "type": "string" } } },
+    "profile_text": { "type": "object", "properties": { "bio": { "type": "string" }, "competitive_programming": { "type": "string" }, "achievements": { "type": "array", "items": { "type": "string" } }, "notes": { "type": "string" } } },
+    "learned_answers": { "type": "array", "items": { "type": "object", "required": ["question", "answer"], "properties": { "question": { "type": "string", "minLength": 1 }, "answer": {} } } },
+    "custom": { "type": "object" }
+  }
+}
