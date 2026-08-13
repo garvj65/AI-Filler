@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Local bridge: receives scanned form fields, asks a local Ollama model
-// to match them against a validated candidate profile, and returns safe answers.
+// Local bridge: resolves known candidate facts deterministically and uses the
+// selected AI provider only for unresolved questions.
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { createOllamaClient, OllamaRuntimeError } = require('./lib/ollama');
+const { createAIProvider, createAIProviderError, isAIProviderError } = require('./lib/provider');
 const { validateAnswers } = require('./lib/answers');
 const { resolveFields } = require('./lib/resolver');
 const { ProfileError, getResumePath, loadProfileFromFile, saveProfileToFile } = require('./lib/profile');
@@ -13,9 +13,9 @@ const { ProfileError, getResumePath, loadProfileFromFile, saveProfileToFile } = 
 const PORT = Number(process.env.PORT || 8731);
 const HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const PROFILE_PATH = path.join(__dirname, '..', 'profile.json');
-const ollama = createOllamaClient();
+const ai = createAIProvider();
 
-const aiState = { ready: false, status: 'starting', error: null, warmupMs: null };
+const aiState = { ready: false, status: 'starting', error: null, initMs: null };
 const profileState = { ready: false, migratedLegacy: false, error: null };
 
 function loadProfile() {
@@ -56,7 +56,7 @@ function buildPrompt(profile, fields) {
   }
 
   const profileJson = JSON.stringify(profile, null, 2);
-  return `You are filling out a web form on behalf of a person. Everything known about them is in this validated candidate profile JSON:\n\n${profileJson}\n${learned}\n\nBelow are the form questions scanned from the page (JSON array). Each item has: id, question, type, and (for choice fields) options.\n\n${JSON.stringify(fields, null, 2)}\n\nFor EACH question, decide the best answer using ONLY the person's data above.\nRules:\n- type "text" or "paragraph": return a plain string suited to the question.\n- type "radio" or "dropdown": return EXACTLY ONE of the given options, copied verbatim. If none fit, return null.\n- type "checkbox": return an ARRAY of zero or more of the given options, copied verbatim.\n- If you cannot answer truthfully from the data, return null. Prefer null over a guess.\n- NEVER invent emails, phone numbers, names, roll numbers, IDs, dates, employers, qualifications, or other personal facts that are not in the data.\n- NEVER use the field label, placeholder, section heading, option-group heading, or question text itself as the answer. Generic labels such as "Filename", "Checkbox Items", "Radio Items", or "Select an option" are not answers.\n- For generic demo/test fields that do not ask for a fact contained in the profile, return null.\n- Preserve saved answers exactly when the question is the same or clearly equivalent.\n\nRespond with ONLY a JSON object mapping each question id to its answer. No prose, no code fences.\nExample: {"q0":"Jane Doe","q1":"jane.doe@example.com","q2":null,"q3":["Python","JavaScript"]}`;
+  return `You are filling out a web form on behalf of a person. Everything known about them is in this validated candidate profile JSON:\n\n${profileJson}\n${learned}\n\nBelow are the unresolved form questions scanned from the page (JSON array). Each item has: id, question, type, and (for choice fields) options.\n\n${JSON.stringify(fields, null, 2)}\n\nFor EACH question, decide the best answer using ONLY the person's data above.\nRules:\n- type "text" or "paragraph": return a plain string suited to the question.\n- type "radio" or "dropdown": return EXACTLY ONE of the given options, copied verbatim. If none fit, return null.\n- type "checkbox": return an ARRAY of zero or more of the given options, copied verbatim.\n- If you cannot answer truthfully from the data, return null. Prefer null over a guess.\n- NEVER invent emails, phone numbers, names, roll numbers, IDs, dates, employers, qualifications, or other personal facts that are not in the data.\n- NEVER use the field label, placeholder, section heading, option-group heading, or question text itself as the answer.\n- Generic labels such as "Filename", "Checkbox Items", "Radio Items", or "Select an option" are not answers.\n- For generic demo/test fields that do not ask for a fact contained in the profile, return null.\n- Preserve saved answers exactly when the question is the same or clearly equivalent.\n\nRespond with ONLY a JSON object mapping each question id to its answer. No prose, no code fences.\nExample: {"q0":"Jane Doe","q1":"jane.doe@example.com","q2":null,"q3":["Python","JavaScript"]}`;
 }
 
 function extractJson(text) {
@@ -71,14 +71,15 @@ function extractJson(text) {
 async function initializeAI() {
   aiState.status = 'checking';
   aiState.error = null;
-  console.log(`Checking Ollama at ${ollama.host}...`);
+  const startedAt = Date.now();
+  console.log(`Checking AI provider ${ai.name}/${ai.model}...`);
   try {
-    console.log(`Warming model ${ollama.model} (cold starts may take a while)...`);
-    const result = await ollama.ensureReady();
+    const result = await ai.ensureReady();
     aiState.ready = true;
     aiState.status = 'ready';
-    aiState.warmupMs = result.warmupMs;
-    console.log(`Ollama ready: ${ollama.model} warmed in ${result.warmupMs} ms.`);
+    aiState.initMs = typeof result.warmupMs === 'number' ? result.warmupMs : Date.now() - startedAt;
+    if (ai.name === 'ollama') console.log(`AI provider ready: Ollama/${ai.model} warmed in ${aiState.initMs} ms.`);
+    else console.log(`AI provider ready: ${ai.name}/${ai.model}.`);
   } catch (error) {
     aiState.ready = false;
     aiState.status = 'error';
@@ -102,12 +103,12 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
   if (req.method === 'GET' && req.url === '/health') {
-    const ok = aiState.ready && profileState.ready;
+    const ok = profileState.ready && aiState.ready;
     return sendJson(res, ok ? 200 : aiState.status === 'checking' && profileState.ready ? 200 : 503, {
       ok,
-      provider: 'ollama',
-      model: ollama.model,
-      ollamaHost: ollama.host,
+      provider: ai.name,
+      model: ai.model,
+      providerHost: ai.host || null,
       ai: { ...aiState },
       profile: { ...profileState, schemaVersion: profileState.ready ? 1 : null }
     });
@@ -161,17 +162,18 @@ const server = http.createServer((req, res) => {
       const result = await resolveFields({
         fields,
         profile,
+        aiSource: ai.name,
         aiFallback: async unresolved => {
           await readinessPromise;
           if (!aiState.ready) {
-            throw new OllamaRuntimeError(
-              aiState.error && aiState.error.code || 'OLLAMA_NOT_READY',
-              aiState.error && aiState.error.message || 'Ollama is not ready.'
+            throw createAIProviderError(
+              aiState.error && aiState.error.code || 'AI_PROVIDER_NOT_READY',
+              aiState.error && aiState.error.message || 'The configured AI provider is not ready.'
             );
           }
           const prompt = buildPrompt(profile, unresolved);
-          console.log(`[fill] ${unresolved.length}/${fields.length} unresolved field(s) -> Ollama/${ollama.model}...`);
-          const raw = await ollama.chat(prompt);
+          console.log(`[fill] ${unresolved.length}/${fields.length} unresolved field(s) -> ${ai.name}/${ai.model}...`);
+          const raw = await ai.chat(prompt);
           return validateAnswers(unresolved, extractJson(raw));
         }
       });
@@ -185,7 +187,7 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 200, { answers: result.answers, resumePath });
     } catch (e) {
       console.error('[error]', e.code ? `${e.code}: ${e.message}` : e.message);
-      const status = e instanceof OllamaRuntimeError ? 503 : e instanceof ProfileError ? 422 : 500;
+      const status = isAIProviderError(e) ? 503 : e instanceof ProfileError ? 422 : 500;
       return sendJson(res, status, { error: e.message, code: e.code || 'FILL_FAILED', details: e.details || undefined });
     }
   });
@@ -194,8 +196,9 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Form-filler bridge running on http://${HOST}:${PORT}`);
   console.log(`Profile: ${PROFILE_PATH}`);
-  console.log(`AI: Ollama model ${ollama.model} at ${ollama.host}`);
-  console.log('No API key or subscription required.');
+  console.log(`AI: ${ai.name}/${ai.model}${ai.host ? ` at ${ai.host}` : ''}`);
+  if (ai.name === 'groq') console.log('Hosted inference enabled. No local LLM/GPU processing is required.');
+  else console.log('Local Ollama inference enabled by AI_PROVIDER=ollama.');
 });
 
 module.exports = { buildPrompt, extractJson, initializeAI, initializeProfile, server };
