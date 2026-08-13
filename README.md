@@ -4,7 +4,7 @@ Fill Google Forms and ordinary HTML forms from your own `profile.json`, using an
 
 **No Claude Code. No API key. No AI subscription. No per-request bill.**
 
-The browser extension scans visible form fields only when you click Start. The local Node bridge sends the scanned questions plus your local profile to Ollama on `127.0.0.1`, gets structured JSON answers back, and fills the form.
+The browser extension scans visible form fields only when you click Start. The local Node bridge sends the scanned questions plus your local profile to Ollama on `127.0.0.1`, gets structured JSON answers back, validates them, and fills the form.
 
 ## Architecture
 
@@ -12,8 +12,10 @@ The browser extension scans visible form fields only when you click Start. The l
 Form tab
   -> extension/content.js scans fields and fills answers
   -> extension/background.js POSTs to http://127.0.0.1:8731/fill
-  -> bridge/server.js calls local Ollama at http://127.0.0.1:11434/api/chat
-  -> Qwen3 returns JSON answers
+  -> bridge/server.js waits for local Ollama readiness
+  -> Ollama model is preloaded through /api/generate
+  -> fill inference uses http://127.0.0.1:11434/api/chat
+  -> answers are sanitized and validated before returning to the extension
 ```
 
 Your `profile.json` remains on your machine. In the default configuration, the model inference also happens on your machine.
@@ -26,7 +28,7 @@ The bridge defaults to:
 qwen3:4b-instruct
 ```
 
-It is a good balance for short classification/matching tasks like form filling. You can replace it with any Ollama chat model using `OLLAMA_MODEL`.
+You can replace it with any compatible local Ollama chat model using `OLLAMA_MODEL`.
 
 Examples:
 
@@ -56,7 +58,7 @@ node bridge/server.js
 
 ## Setup
 
-### 1. Clone the original project
+### 1. Clone the project
 
 ```bash
 git clone https://github.com/garvj65/AI-Filler.git
@@ -89,12 +91,17 @@ cd bridge
 node server.js
 ```
 
-Expected startup output:
+The bridge starts listening immediately, checks that Ollama is reachable, verifies that the configured model is installed, and preloads the model before a `/fill` request is allowed to run inference. A cold model therefore gets a separate warm-up budget instead of consuming the normal fill timeout.
+
+Typical startup output:
 
 ```text
+Checking Ollama at http://127.0.0.1:11434...
+Warming model qwen3:4b-instruct (cold starts may take a while)...
 Form-filler bridge running on http://127.0.0.1:8731
 AI: Ollama model qwen3:4b-instruct at http://127.0.0.1:11434
 No API key or subscription required.
+Ollama ready: qwen3:4b-instruct warmed in 12345 ms.
 ```
 
 ### 5. Load the extension
@@ -113,9 +120,20 @@ The bridge uses environment variables instead of provider credentials:
 |---|---|---|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
 | `OLLAMA_MODEL` | `qwen3:4b-instruct` | Local model to use |
-| `AI_TIMEOUT_MS` | `120000` | Model request timeout |
+| `AI_TIMEOUT_MS` | `120000` | Normal fill inference timeout |
+| `OLLAMA_READINESS_TIMEOUT_MS` | `10000` | Ollama availability/model-list timeout |
+| `OLLAMA_WARMUP_TIMEOUT_MS` | `300000` | Separate cold-start/model preload timeout |
+| `OLLAMA_KEEP_ALIVE` | `10m` | How long Ollama should keep the model loaded after use |
 | `PORT` | `8731` | Bridge port |
 | `BRIDGE_HOST` | `127.0.0.1` | Bridge bind address |
+
+## Health check
+
+```bash
+curl http://localhost:8731/health
+```
+
+The response includes the configured provider/model plus AI readiness state. If startup initialization fails, `/health` returns the associated Ollama error code and message.
 
 ## Quick test without the browser
 
@@ -139,6 +157,26 @@ Expected shape:
 }
 ```
 
+## Development checks
+
+From `bridge/`:
+
+```bash
+npm run check
+npm test
+```
+
+The test suite uses mocked Ollama responses, so it does not require a running model for the deterministic readiness/error/validation tests.
+
+## Answer safety
+
+The model is instructed to return `null` rather than guess when profile data does not support an answer. Before answers reach the browser, the bridge also:
+
+- converts empty text answers to `null`
+- rejects obvious question/label echoes such as `Filename:`
+- requires radio/dropdown values to match a real page option
+- filters checkbox arrays down to real page options
+
 ## What changed from the Claude Code version
 
 The browser extension behavior is unchanged. The bridge no longer spawns:
@@ -147,11 +185,11 @@ The browser extension behavior is unchanged. The bridge no longer spawns:
 claude -p <prompt>
 ```
 
-Instead it calls the local Ollama chat API with JSON output enabled. The response is then validated against each form field before being returned to the extension. Radio/dropdown answers must match one of the page's actual options, and checkbox answers are filtered to valid options.
+Instead it calls the local Ollama API and validates structured answers before returning them to the extension.
 
 ## Troubleshooting
 
-### `Could not reach Ollama`
+### `OLLAMA_UNREACHABLE`
 
 Make sure Ollama is running. Its default local API is:
 
@@ -159,7 +197,7 @@ Make sure Ollama is running. Its default local API is:
 http://127.0.0.1:11434
 ```
 
-### `model not found`
+### `OLLAMA_MODEL_NOT_FOUND`
 
 Pull the configured model:
 
@@ -167,23 +205,17 @@ Pull the configured model:
 ollama pull qwen3:4b-instruct
 ```
 
-### Too slow
+### `OLLAMA_WARMUP_TIMEOUT`
 
-Try a smaller model:
+The model took longer than the warm-up budget to load. Increase `OLLAMA_WARMUP_TIMEOUT_MS` if the machine needs more cold-start time, or use a smaller local model.
 
-```bash
-OLLAMA_MODEL=qwen3:1.7b node bridge/server.js
-```
+### `OLLAMA_INFERENCE_TIMEOUT`
+
+The model was already initialized but a normal fill request exceeded `AI_TIMEOUT_MS`. Increase that limit or use a smaller model if needed.
 
 ### Answers are weaker than expected
 
-Try:
-
-```bash
-OLLAMA_MODEL=qwen3:8b node bridge/server.js
-```
-
-and make your `profile.json` richer and more explicit.
+Make your `profile.json` richer and more explicit. AI-Filler now prefers `null` over obviously unusable label/placeholder echoes. Deterministic profile matching is planned separately so common profile facts will not need LLM inference at all.
 
 ## Privacy note
 
