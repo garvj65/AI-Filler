@@ -9,7 +9,7 @@ const { createAIProvider, createAIProviderError, isAIProviderError } = require('
 const { validateAnswers } = require('./lib/answers');
 const { resolveFields } = require('./lib/resolver');
 const { ProfileError, createEmptyProfile, getResumePath, loadProfileFromFile, saveProfileToFile } = require('./lib/profile');
-const { ResumeImportError, buildResumeDraftPrompt, extractResumeText, mergeResumeDraft, sanitizeResumeDraft } = require('./lib/resume');
+const { ResumeImportError, buildResumeDraftPrompt, extractResumeText, finalizeResumeDraft, mergeResumeDraft, sanitizeResumeDraft } = require('./lib/resume');
 
 const PORT = Number(process.env.PORT || 8731);
 const HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -148,7 +148,7 @@ const server = http.createServer((req, res) => {
         await ensureAIReady();
         console.log(`[resume] ${extracted.format.toUpperCase()} native text ${extracted.originalTextLength} chars -> ${ai.name}/${ai.model} draft...`);
         const raw = await ai.chat(buildResumeDraftPrompt(extracted.text));
-        const draft = sanitizeResumeDraft(extractJson(raw));
+        const draft = finalizeResumeDraft(extractJson(raw), extracted.text);
         return sendJson(res, 200, { ok: true, draft, source: { fileName: extracted.fileName, format: extracted.format, textLength: extracted.originalTextLength, truncated: extracted.truncated, warnings: extracted.warnings } });
       }
 

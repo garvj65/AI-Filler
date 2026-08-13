@@ -1,7 +1,7 @@
 {
   "name": "form-filler-bridge",
-  "version": "2.0.0",
-  "description": "AI-Filler bridge with deterministic matching, Groq fallback, and resume-to-profile onboarding.",
+  "version": "2.0.1",
+  "description": "AI-Filler bridge with deterministic matching, Groq fallback, and hardened resume-to-profile onboarding.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
