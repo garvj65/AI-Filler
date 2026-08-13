@@ -112,6 +112,45 @@ function validateProfile(profile) {
   return errors;
 }
 
+function createEmptyProfile() {
+  return {
+    schema_version: 1,
+    personal: {
+      full_name: '',
+      first_name: '',
+      last_name: '',
+      primary_email: '',
+      alternate_email: '',
+      phone: '',
+      gender: '',
+      location: { city: '', state: '', country: '' }
+    },
+    links: { github: '', linkedin: '', twitter: '', portfolio: '', discord: '' },
+    education: [],
+    experience: [],
+    current_employment: { company: '', role: '', years_of_experience: '' },
+    skills: [],
+    job_preferences: {
+      applying_for: '',
+      availability: '',
+      current_ctc: '',
+      expected_ctc: '',
+      notice_period: '',
+      willing_to_relocate: null,
+      work_authorization: '',
+      requires_sponsorship: null,
+      current_employment_status: '',
+      preferred_work_location: '',
+      employment_type: '',
+      joining_date: ''
+    },
+    documents: { resume_path: '' },
+    profile_text: { bio: '', competitive_programming: '', achievements: [], notes: '' },
+    learned_answers: [],
+    custom: {}
+  };
+}
+
 function migrateLegacyProfile(legacy) {
   const workExperience = Array.isArray(legacy.work_experience) ? legacy.work_experience : [];
   const positions = Array.isArray(legacy.positions) ? legacy.positions : [];
@@ -198,4 +237,4 @@ function getResumePath(profile) {
   return profile && profile.documents && profile.documents.resume_path || '';
 }
 
-module.exports = { ProfileError, getResumePath, loadProfileFromFile, migrateLegacyProfile, parseProfile, saveProfileToFile, validateProfile };
+module.exports = { ProfileError, createEmptyProfile, getResumePath, loadProfileFromFile, migrateLegacyProfile, parseProfile, saveProfileToFile, validateProfile };

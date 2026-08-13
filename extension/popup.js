@@ -1,33 +1,7 @@
-const auto = document.getElementById('autoSubmit');
-const status = document.getElementById('status');
-
-// Restore + persist the auto-submit toggle.
-chrome.storage.local.get('autoSubmit').then(c => (auto.checked = !!c.autoSubmit));
-auto.addEventListener('change', () =>
-  chrome.storage.local.set({ autoSubmit: auto.checked })
-);
-
-// Live bridge health check.
-function setStatus(color, text) {
-  status.innerHTML = `<span class="dot" style="background:${color}"></span>${text}`;
-}
-fetch('http://127.0.0.1:8731/health')
-  .then(r => r.json())
-  .then(() => setStatus('#2ecc71', 'Bridge: connected'))
-  .catch(() => setStatus('#c0392b', 'Bridge: not running — start server.js'));
-
-// Start: inject the content script into the active tab, which scans + fills.
-// Works on any ordinary web page (via activeTab) — Google Forms or plain HTML.
-document.getElementById('fill').addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !/^https?:\/\//.test(tab.url || '')) {
-    setStatus('#e67e22', 'Open a web page with a form first');
-    return;
-  }
-  try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-    window.close();
-  } catch (e) {
-    setStatus('#c0392b', 'Can’t run on this page: ' + (e.message || e));
-  }
-});
+const auto=document.getElementById('autoSubmit');const status=document.getElementById('status');const resumeFile=document.getElementById('resumeFile');const resumeImport=document.getElementById('resumeImport');const resumeStatus=document.getElementById('resumeStatus');
+chrome.storage.local.get('autoSubmit').then(c=>(auto.checked=!!c.autoSubmit));auto.addEventListener('change',()=>chrome.storage.local.set({autoSubmit:auto.checked}));
+function setStatus(color,text){status.innerHTML=`<span class="dot" style="background:${color}"></span>${text}`;}function setResumeStatus(text,isError=false){resumeStatus.textContent=text;resumeStatus.style.color=isError?'#c0392b':'#5f6368';}
+fetch('http://127.0.0.1:8731/health').then(async r=>({ok:r.ok,body:await r.json()})).then(({ok,body})=>{if(body?.ai?.ready&&body?.profile?.ready)setStatus('#2ecc71',`Bridge: ready · ${body.provider}`);else if(body?.ai?.ready&&body?.onboarding?.resumeImport)setStatus('#e6a700','Bridge: ready for resume onboarding');else if(!ok&&body?.ai?.error?.message)setStatus('#c0392b',body.ai.error.message);else setStatus('#e6a700','Bridge running; setup incomplete');}).catch(()=>setStatus('#c0392b','Bridge: not running — start server.js'));
+document.getElementById('fill').addEventListener('click',async()=>{const[tab]=await chrome.tabs.query({active:true,currentWindow:true});if(!tab||!/^https?:\/\//.test(tab.url||'')){setStatus('#e67e22','Open a web page with a form first');return;}try{await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});window.close();}catch(e){setStatus('#c0392b','Can’t run on this page: '+(e.message||e));}});
+function arrayBufferToBase64(buffer){const bytes=new Uint8Array(buffer);let binary='';const chunkSize=0x8000;for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunkSize,bytes.length)));return btoa(binary);}
+resumeImport.addEventListener('click',async()=>{const file=resumeFile.files?.[0];if(!file)return setResumeStatus('Choose a PDF, DOCX, or TXT resume first.',true);if(file.size>8*1024*1024)return setResumeStatus('Resume must be 8 MB or smaller.',true);resumeImport.disabled=true;setResumeStatus('Reading resume and creating a draft…');try{const buffer=await file.arrayBuffer();const response=await fetch('http://127.0.0.1:8731/resume/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName:file.name,mimeType:file.type,base64:arrayBufferToBase64(buffer)})});const payload=await response.json().catch(()=>({}));if(!response.ok){const prefix=payload.code==='RESUME_OCR_REQUIRED'?'Scanned PDF detected. ':'';throw new Error(prefix+(payload.error||`Resume import failed (${response.status}).`));}await chrome.storage.local.set({resumeDraft:payload.draft,resumeSource:payload.source});await chrome.tabs.create({url:chrome.runtime.getURL('resume-review.html')});window.close();}catch(error){setResumeStatus(error.message||String(error),true);}finally{resumeImport.disabled=false;}});

@@ -1,13 +1,17 @@
 {
   "name": "form-filler-bridge",
-  "version": "1.5.0",
-  "description": "Local form-filler bridge with deterministic matching and hosted Groq fallback by default.",
+  "version": "2.0.0",
+  "description": "AI-Filler bridge with deterministic matching, Groq fallback, and resume-to-profile onboarding.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/groq.js && node --check lib/provider.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js && node --check lib/matcher.js && node --check lib/resolver.js",
+    "check": "node --check server.js && node --check lib/groq.js && node --check lib/provider.js && node --check lib/ollama.js && node --check lib/answers.js && node --check lib/profile.js && node --check lib/matcher.js && node --check lib/resolver.js && node --check lib/resume.js",
     "test": "node --test test/*.test.js"
   },
-  "engines": { "node": ">=18" },
+  "dependencies": {
+    "mammoth": "1.12.0",
+    "pdf-parse": "2.4.5"
+  },
+  "engines": { "node": ">=20.16.0" },
   "license": "MIT"
 }

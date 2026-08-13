@@ -1,26 +1,10 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <style>
-    body { font: 13px system-ui, sans-serif; width: 250px; padding: 14px; margin: 0; }
-    h1 { font-size: 14px; margin: 0 0 10px; }
-    .row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
-    button { width: 100%; padding: 9px; margin-top: 6px; cursor: pointer;
-             border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; }
-    button:hover { background: #245bc0; }
-    #status { margin-top: 12px; font-size: 12px; color: #666; }
-    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-  </style>
-</head>
+<head><meta charset="utf-8" /><style>
+body{font:13px system-ui,sans-serif;width:290px;padding:14px;margin:0;color:#202124}h1{font-size:15px;margin:0 0 10px}h2{font-size:12px;margin:16px 0 7px;color:#5f6368;text-transform:uppercase;letter-spacing:.04em}.row{display:flex;align-items:center;gap:8px;margin:10px 0}button{width:100%;padding:9px;margin-top:6px;cursor:pointer;border:0;border-radius:6px;background:#2d6cdf;color:#fff;font-size:13px;font-weight:600}button.secondary{background:#eef2f8;color:#244b86;border:1px solid #d4dce8}button:disabled{opacity:.6;cursor:not-allowed}input[type=file]{width:100%;font-size:12px}#status,#resumeStatus{margin-top:10px;font-size:12px;color:#666;line-height:1.4}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}.divider{height:1px;background:#e8eaed;margin:14px 0}.hint{color:#777;font-size:11px;margin:5px 0 0;line-height:1.35}
+</style></head>
 <body>
-  <h1>AI Form Filler</h1>
-  <div class="row">
-    <input type="checkbox" id="autoSubmit" />
-    <label for="autoSubmit">Auto-submit after filling</label>
-  </div>
-  <button id="fill">▶ Start — scan &amp; fill</button>
-  <div id="status"><span class="dot" style="background:#bbb"></span>checking bridge…</div>
-  <script src="popup.js"></script>
-</body>
-</html>
+<h1>AI-Filler</h1><div id="status"><span class="dot" style="background:#bbb"></span>checking bridge…</div>
+<h2>Fill this page</h2><div class="row"><input type="checkbox" id="autoSubmit"/><label for="autoSubmit">Auto-submit after filling</label></div><button id="fill">▶ Start — scan &amp; fill</button>
+<div class="divider"></div><h2>Build profile from resume</h2><input id="resumeFile" type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"/><div class="hint">PDF, DOCX or TXT · max 8 MB. You review the draft before anything is saved.</div><button id="resumeImport" class="secondary">Create profile draft</button><div id="resumeStatus"></div>
+<script src="popup.js"></script></body></html>
